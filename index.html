@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Boliche 6 Pinos</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        bowling: {
+                            bg: '#0F172A',
+                            card: '#1E293B',
+                            accent: '#38BDF8',
+                            strike: '#EF4444',
+                            spare: '#3B82F6',
+                            gold: '#F59E0B'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for modern feel */
+        ::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* Pin interactive animations */
+        .pin-btn {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .pin-btn:hover:not(:disabled) {
+            transform: translateY(-4px) scale(1.05);
+        }
+        .pin-btn.knocked {
+            opacity: 0.35;
+            transform: scale(0.85) rotate(12deg);
+            filter: grayscale(100%);
+        }
+
+        /* Celebration Text Animation */
+        @keyframes floatUp {
+            0% { opacity: 0; transform: translate(-50%, 20px) scale(0.8); }
+            50% { opacity: 1; transform: translate(-50%, -10px) scale(1.1); }
+            100% { opacity: 0; transform: translate(-50%, -40px) scale(1); }
+        }
+        .toast-celebration {
+            animation: floatUp 1.8s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col justify-between selection:bg-cyan-500 selection:text-white">
+
+    <!-- Header Navbar -->
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 px-4 py-3 shadow-lg">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                    <i class="fa-solid font-bold text-white text-xl">🎳</i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-black tracking-wider bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+                        BOLICHE <span class="text-slate-400 font-normal text-sm">6 PINOS</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Gerenciador de Partidas e Placar Oficial</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button id="btn-save-indicator" class="hidden sm:flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+                    <i class="fa-solid fa-floppy-disk text-cyan-400"></i>
+                    <span id="save-status-text">Salvo localmente</span>
+                </button>
+                <button id="btn-reset-app" title="Reiniciar Aplicativo" class="text-xs bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800/50 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span class="hidden md:inline">Nova Partida</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="max-w-7xl mx-auto w-full px-4 py-6 flex-1">
+
+        <!-- SCREEN 1: Setup & Player Registration -->
+        <section id="screen-setup" class="max-w-xl mx-auto my-auto py-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
+                <div class="absolute -right-10 -top-10 w-40 h-40 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                <div class="text-center mb-6">
+                    <h2 class="text-2xl font-bold text-slate-100">Configurar Partida</h2>
+                    <p class="text-slate-400 text-sm mt-1">Adicione os jogadores e escolha as regras para começar</p>
+                </div>
+
+                <!-- Restore Game Banner (if saved match exists) -->
+                <div id="restore-banner" class="hidden mb-6 p-4 rounded-xl bg-cyan-950/50 border border-cyan-800/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid fa-clock-rotate-left text-cyan-400 text-xl"></i>
+                        <div class="text-left">
+                            <p class="text-xs font-semibold text-cyan-300">Partida em andamento encontrada</p>
+                            <p class="text-xs text-slate-400" id="restore-info">Existe um jogo salvo no seu navegador.</p>
+                        </div>
+                    </div>
+                    <button id="btn-resume-game" class="w-full sm:w-auto px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-lg transition shadow-md whitespace-nowrap">
+                        Continuar Jogo
+                    </button>
+                </div>
+
+                <!-- Add Player Form -->
+                <form id="form-add-player" class="mb-6">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Nome do Jogador</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="input-player-name" maxlength="15" placeholder="Ex: João Silva" required
+                            class="flex-1 bg-slate-950 border border-slate-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 text-slate-100 px-4 py-2.5 rounded-xl text-sm outline-none transition placeholder-slate-600">
+                        <button type="submit" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-400 hover:text-cyan-300 font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-2 text-sm">
+                            <i class="fa-solid fa-plus"></i>
+                            <span class="hidden sm:inline">Adicionar</span>
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Players Registered List -->
+                <div class="mb-6">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Jogadores Cadastrados</span>
+                        <span id="player-count-badge" class="text-xs bg-slate-800 text-cyan-400 font-bold px-2 py-0.5 rounded-full">0</span>
+                    </div>
+                    
+                    <div id="players-list-container" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        <!-- Dynamic Player Items -->
+                        <div id="empty-players-msg" class="text-center py-6 border border-dashed border-slate-800 rounded-xl text-slate-500 text-sm">
+                            Nenhum jogador adicionado ainda.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Game Configuration options -->
+                <div class="mb-6 border-t border-slate-800 pt-5">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Quantidade de Rodadas (Frames)</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button type="button" data-frames="5" class="btn-frame-opt py-2.5 px-4 rounded-xl border border-slate-800 bg-slate-950 hover:bg-slate-800 text-slate-300 text-sm font-semibold flex items-center justify-center gap-2 transition">
+                            <i class="fa-solid fa-bolt text-xs"></i> 5 Rodadas (Rápida)
+                        </button>
+                        <button type="button" data-frames="10" class="btn-frame-opt active py-2.5 px-4 rounded-xl border border-cyan-500/50 bg-cyan-950/40 text-cyan-400 text-sm font-bold flex items-center justify-center gap-2 transition">
+                            <i class="fa-solid fa-trophy text-xs"></i> 10 Rodadas (Padrão)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Start Game Button -->
+                <button id="btn-start-game" disabled class="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed text-slate-950 font-black tracking-wide py-3.5 px-6 rounded-xl shadow-lg shadow-cyan-500/20 text-base transition duration-200">
+                    INICIAR PARTIDA
+                </button>
+            </div>
+        </section>
+
+        <!-- SCREEN 2: Main Interactive Game Workspace -->
+        <section id="screen-game" class="hidden space-y-6">
+
+            <!-- Active Player Status Bar & Turn Controller -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                <!-- Current Turn Banner & Pins Input Box -->
+                <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between">
+                    <div class="absolute -right-20 -bottom-20 w-60 h-60 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"></div>
+
+                    <!-- Turn Header -->
+                    <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-black text-slate-950 text-xl shadow-lg shadow-cyan-500/20" id="current-player-avatar">
+                                ?
+                            </div>
+                            <div>
+                                <span class="text-xs uppercase tracking-wider text-cyan-400 font-bold">Vez de Jogar</span>
+                                <h3 id="current-player-name" class="text-2xl font-black text-white leading-tight">--</h3>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <div class="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-center">
+                                <span class="block text-[10px] text-slate-400 uppercase font-bold">Rodada</span>
+                                <span id="current-frame-num" class="text-base font-black text-amber-400">1 / 10</span>
+                            </div>
+                            <div class="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-center">
+                                <span class="block text-[10px] text-slate-400 uppercase font-bold">Lançamento</span>
+                                <span id="current-roll-num" class="text-base font-black text-cyan-400">1º</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Visual Interactive 6-Pin Layout -->
+                    <div class="py-6 flex flex-col items-center justify-center relative">
+                        <!-- Floating Toast Celebration -->
+                        <div id="toast-overlay" class="absolute inset-0 pointer-events-none flex items-center justify-center z-20"></div>
+
+                        <p class="text-xs text-slate-400 mb-4 font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-hand-pointer text-cyan-400"></i>
+                            Clique nos pinos derrubados ou use os botões rápidos:
+                        </p>
+
+                        <!-- Pin Triangle Layout (6 Pins: Row 1: 1, Row 2: 2 3, Row 3: 4 5 6) -->
+                        <div class="flex flex-col items-center gap-3 mb-6 bg-slate-950/60 p-6 rounded-2xl border border-slate-800/80 min-w-[260px]">
+                            <!-- Row 3 (Back): Pins 4, 5, 6 -->
+                            <div class="flex justify-center gap-6">
+                                <button data-pin-id="4" class="pin-btn w-12 h-12 rounded-full bg-slate-800 border-2 border-slate-600 text-slate-200 font-black text-sm flex items-center justify-center shadow-lg relative">
+                                    <span>4</span>
+                                </button>
+                                <button data-pin-id="5" class="pin-btn w-12 h-12 rounded-full bg-slate-800 border-2 border-slate-600 text-slate-200 font-black text-sm flex items-center justify-center shadow-lg relative">
+                                    <span>5</span>
+                                </button>
+                                <button data-pin-id="6" class="pin-btn w-12 h-12 rounded-full bg-slate-800 border-2 border-slate-600 text-slate-200 font-black text-sm flex items-center justify-center shadow-lg relative">
+                                    <span>6</span>
+                                </button>
+                            </div>
+
+                            <!-- Row 2 (Middle): Pins 2, 3 -->
+                            <div class="flex justify-center gap-6">
+                                <button data-pin-id="2" class="pin-btn w-12 h-12 rounded-full bg-slate-800 border-2 border-slate-600 text-slate-200 font-black text-sm flex items-center justify-center shadow-lg relative">
+                                    <span>2</span>
+                                </button>
+                                <button data-pin-id="3" class="pin-btn w-12 h-12 rounded-full bg-slate-800 border-2 border-slate-600 text-slate-200 font-black text-sm flex items-center justify-center shadow-lg relative">
+                                    <span>3</span>
+                                </button>
+                            </div>
+
+                            <!-- Row 1 (Front): Pin 1 -->
+                            <div class="flex justify-center">
+                                <button data-pin-id="1" class="pin-btn w-12 h-12 rounded-full bg-gradient-to-tr from-cyan-600 to-blue-500 border-2 border-cyan-300 text-white font-black text-sm flex items-center justify-center shadow-lg relative">
+                                    <span>1</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Quick Count Buttons (0 to Max Pins Available) -->
+                        <div class="w-full max-w-md">
+                            <span class="block text-center text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Seleção Rápida de Total</span>
+                            <div id="quick-buttons-grid" class="grid grid-cols-7 gap-1.5 sm:gap-2">
+                                <!-- Generated by JS depending on max pins remaining -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Submit Bar -->
+                    <div class="pt-4 border-t border-slate-800 flex items-center justify-between gap-4">
+                        <button id="btn-undo-roll" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition flex items-center gap-2 border border-slate-700">
+                            <i class="fa-solid fa-rotate-left"></i> Desfazer
+                        </button>
+
+                        <div class="text-right flex items-center gap-3">
+                            <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Pinos selecionados neste lançamento:</span>
+                            <span id="selected-pins-count" class="text-xl font-black text-cyan-400 bg-slate-950 px-3 py-1 rounded-lg border border-slate-800">0</span>
+                            <button id="btn-confirm-roll" class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black px-6 py-2.5 rounded-xl shadow-md text-sm transition">
+                                CONFIRMAR JOGADA
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Leaderboard Quick Summary Panel -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                            <h4 class="font-bold text-slate-200 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-ranking-star text-amber-400"></i>
+                                Classificação Atual
+                            </h4>
+                            <span class="text-[10px] bg-slate-800 text-slate-400 font-bold px-2 py-0.5 rounded-md">Ao Vivo</span>
+                        </div>
+
+                        <div id="live-leaderboard" class="space-y-3">
+                            <!-- Dynamic mini leaderboard rows -->
+                        </div>
+                    </div>
+
+                    <div class="mt-6 pt-4 border-t border-slate-800 text-center">
+                        <p class="text-xs text-slate-500">
+                            Regra: Max 6 pinos por jogada. Strike no 1º arremesso encerra a rodada.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SCOREBOARD MATRIX (FULL TABLE) -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-100">Tabela de Pontuação Completa</h3>
+                        <p class="text-xs text-slate-400">Acompanhamento detalhado de todas as jogadas e bônus</p>
+                    </div>
+                    <!-- Legend Badges -->
+                    <div class="flex items-center gap-3 text-xs">
+                        <span class="flex items-center gap-1.5 text-slate-300">
+                            <span class="w-4 h-4 rounded bg-red-500/20 text-red-400 font-black text-[10px] flex items-center justify-center border border-red-500/40">X</span> Strike (6)
+                        </span>
+                        <span class="flex items-center gap-1.5 text-slate-300">
+                            <span class="w-4 h-4 rounded bg-blue-500/20 text-blue-400 font-black text-[10px] flex items-center justify-center border border-blue-500/40">/</span> Spare
+                        </span>
+                        <span class="flex items-center gap-1.5 text-slate-300">
+                            <span class="w-4 h-4 rounded bg-slate-800 text-slate-500 font-bold text-[10px] flex items-center justify-center border border-slate-700">-</span> Canaleta
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Table Container with Horizontal Scroll -->
+                <div class="overflow-x-auto pb-2">
+                    <table class="w-full text-left border-collapse min-w-[750px]">
+                        <thead>
+                            <tr class="border-b border-slate-800 text-xs text-slate-400 uppercase">
+                                <th class="p-3 w-40">Jogador</th>
+                                <!-- Frames headers dynamically generated -->
+                                <th id="frame-headers-row" class="contents"></th>
+                                <th class="p-3 text-center w-24 bg-slate-950/60 font-black text-cyan-400">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scoreboard-tbody" class="divide-y divide-slate-800/60 text-sm">
+                            <!-- Dynamic scoreboard rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN 3: Game Over Modal / Final Podium -->
+        <div id="modal-gameover" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 md:p-8 shadow-2xl relative text-center overflow-hidden">
+                <div class="absolute -top-16 -left-16 w-32 h-32 bg-amber-500/20 rounded-full blur-2xl pointer-events-none"></div>
+                <div class="absolute -bottom-16 -right-16 w-32 h-32 bg-cyan-500/20 rounded-full blur-2xl pointer-events-none"></div>
+
+                <div class="w-16 h-16 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-500 text-slate-950 font-black text-3xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-amber-500/30">
+                    🏆
+                </div>
+
+                <h2 class="text-2xl font-black text-slate-100">FIM DE PARTIDA!</h2>
+                <p class="text-slate-400 text-xs mt-1 mb-6">Confira os campeões e resultados da rodada</p>
+
+                <!-- Podium List -->
+                <div id="podium-container" class="space-y-3 mb-6">
+                    <!-- Dynamic Winner Rows -->
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                    <button id="btn-restart-same" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 px-4 rounded-xl text-sm transition border border-slate-700">
+                        Jogar Novamente
+                    </button>
+                    <button id="btn-new-players" class="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black py-3 px-4 rounded-xl text-sm transition shadow-lg shadow-cyan-500/20">
+                        Nova Partida (Novos Jogadores)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Custom Confirmation Modal (Replaces browser alert/confirm) -->
+        <div id="modal-confirm" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl">
+                <i class="fa-solid fa-triangle-exclamation text-amber-400 text-3xl mb-3"></i>
+                <h3 id="confirm-title" class="text-lg font-bold text-slate-100 mb-1">Tem certeza?</h3>
+                <p id="confirm-msg" class="text-xs text-slate-400 mb-6">Isso irá reiniciar o jogo atual.</p>
+                <div class="flex gap-3">
+                    <button id="btn-confirm-cancel" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition">
+                        Cancelar
+                    </button>
+                    <button id="btn-confirm-ok" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-lg shadow-red-600/30">
+                        Sim, Continuar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-900/60 border-t border-slate-800/80 py-3 text-center text-xs text-slate-500">
+        <p>Sistema de Boliche de 6 Pinos &bull; Armazenamento em Tempo Real via LocalStorage</p>
+    </footer>
+
+    <script>
+        /* JavaScript Application State & Engine */
+
+        const STORAGE_KEY = 'bowling_6pin_app_state_v1';
+
+        // State Schema
+        let gameState = {
+            players: [], // Array of { id, name, rolls: [] }
+            totalFrames: 10,
+            currentTurnPlayerIdx: 0,
+            isGameStarted: false,
+            isGameOver: false,
+            history: [] // For undo functionality
+        };
+
+        // Temporary pin selections for the active turn
+        let selectedPinIds = new Set();
+
+        // Pending confirmation callback
+        let confirmCallback = null;
+
+        /* ================= DOM ELEMENTS ================= */
+        const screenSetup = document.getElementById('screen-setup');
+        const screenGame = document.getElementById('screen-game');
+        const formAddPlayer = document.getElementById('form-add-player');
+        const inputPlayerName = document.getElementById('input-player-name');
+        const playersListContainer = document.getElementById('players-list-container');
+        const emptyPlayersMsg = document.getElementById('empty-players-msg');
+        const playerCountBadge = document.getElementById('player-count-badge');
+        const btnStartGame = document.getElementById('btn-start-game');
+        const btnFrameOpts = document.querySelectorAll('.btn-frame-opt');
+        const restoreBanner = document.getElementById('restore-banner');
+        const btnResumeGame = document.getElementById('btn-resume-game');
+        const btnResetApp = document.getElementById('btn-reset-app');
+        
+        const currentPlayerAvatar = document.getElementById('current-player-avatar');
+        const currentPlayerName = document.getElementById('current-player-name');
+        const currentFrameNum = document.getElementById('current-frame-num');
+        const currentRollNum = document.getElementById('current-roll-num');
+        const pinButtons = document.querySelectorAll('.pin-btn');
+        const quickButtonsGrid = document.getElementById('quick-buttons-grid');
+        const selectedPinsCount = document.getElementById('selected-pins-count');
+        const btnConfirmRoll = document.getElementById('btn-confirm-roll');
+        const btnUndoRoll = document.getElementById('btn-undo-roll');
+        const toastOverlay = document.getElementById('toast-overlay');
+
+        const frameHeadersRow = document.getElementById('frame-headers-row');
+        const scoreboardTbody = document.getElementById('scoreboard-tbody');
+        const liveLeaderboard = document.getElementById('live-leaderboard');
+
+        const modalGameover = document.getElementById('modal-gameover');
+        const podiumContainer = document.getElementById('podium-container');
+        const btnRestartSame = document.getElementById('btn-restart-same');
+        const btnNewPlayers = document.getElementById('btn-new-players');
+
+        const modalConfirm = document.getElementById('modal-confirm');
+        const confirmTitle = document.getElementById('confirm-title');
+        const confirmMsg = document.getElementById('confirm-msg');
+        const btnConfirmCancel = document.getElementById('btn-confirm-cancel');
+        const btnConfirmOk = document.getElementById('btn-confirm-ok');
+
+        // Storage Helper Functions with safe try-catch wrapper
+        function saveToLocalStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState));
+                updateSaveIndicator(true);
+            } catch (err) {
+                console.warn('LocalStorage error or restricted sandbox:', err);
+                updateSaveIndicator(false);
+            }
+        }
+
+        function loadFromLocalStorage() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    return JSON.parse(saved);
+                }
+            } catch (err) {
+                console.warn('Failed to read LocalStorage:', err);
+            }
+            return null;
+        }
+
+        function clearLocalStorage() {
+            try {
+                localStorage.removeItem(STORAGE_KEY);
+            } catch (err) {
+                console.warn('Failed to clear LocalStorage:', err);
+            }
+        }
+
+        function updateSaveIndicator(isSaved) {
+            const statusText = document.getElementById('save-status-text');
+            if (statusText) {
+                statusText.textContent = isSaved ? 'Salvo localmente' : 'Memória da Sessão';
+            }
+        }
+
+        /* ================= SETUP & PLAYERS LOGIC ================= */
+
+        // Add Player
+        formAddPlayer.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = inputPlayerName.value.trim();
+            if (!name) return;
+
+            const newPlayer = {
+                id: 'p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                name: name,
+                rolls: []
+            };
+
+            gameState.players.push(newPlayer);
+            inputPlayerName.value = '';
+            renderSetupPlayersList();
+            saveToLocalStorage();
+        });
+
+        // Remove Player
+        function removePlayer(id) {
+            gameState.players = gameState.players.filter(p => p.id !== id);
+            renderSetupPlayersList();
+            saveToLocalStorage();
+        }
+
+        // Render setup players list
+        function renderSetupPlayersList() {
+            playerCountBadge.textContent = gameState.players.length;
+            
+            if (gameState.players.length === 0) {
+                emptyPlayersMsg.classList.remove('hidden');
+                playersListContainer.innerHTML = '';
+                playersListContainer.appendChild(emptyPlayersMsg);
+                btnStartGame.disabled = true;
+                return;
+            }
+
+            emptyPlayersMsg.classList.add('hidden');
+            playersListContainer.innerHTML = '';
+
+            gameState.players.forEach((player, idx) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between bg-slate-950 p-3 rounded-xl border border-slate-800';
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <span class="w-6 h-6 rounded-lg bg-slate-800 text-cyan-400 font-bold text-xs flex items-center justify-center">${idx + 1}</span>
+                        <span class="font-semibold text-slate-200 text-sm">${escapeHtml(player.name)}</span>
+                    </div>
+                    <button type="button" onclick="removePlayer('${player.id}')" class="text-slate-500 hover:text-red-400 p-1 transition">
+                        <i class="fa-solid fa-trash-can text-sm"></i>
+                    </button>
+                `;
+                playersListContainer.appendChild(div);
+            });
+
+            btnStartGame.disabled = gameState.players.length === 0;
+        }
+
+        // Select Frames Count Option
+        btnFrameOpts.forEach(btn => {
+            btn.addEventListener('click', () => {
+                btnFrameOpts.forEach(b => {
+                    b.classList.remove('active', 'border-cyan-500/50', 'bg-cyan-950/40', 'text-cyan-400', 'font-bold');
+                    b.classList.add('border-slate-800', 'bg-slate-950', 'text-slate-300', 'font-semibold');
+                });
+                btn.classList.add('active', 'border-cyan-500/50', 'bg-cyan-950/40', 'text-cyan-400', 'font-bold');
+                btn.classList.remove('border-slate-800', 'bg-slate-950', 'text-slate-300', 'font-semibold');
+
+                gameState.totalFrames = parseInt(btn.dataset.frames, 10);
+                saveToLocalStorage();
+            });
+        });
+
+        // Start Game Button Handler
+        btnStartGame.addEventListener('click', () => {
+            if (gameState.players.length === 0) return;
+            gameState.isGameStarted = true;
+            gameState.currentTurnPlayerIdx = 0;
+            gameState.isGameOver = false;
+            
+            // Clear existing rolls if fresh start
+            gameState.players.forEach(p => p.rolls = []);
+            
+            saveToLocalStorage();
+            initGameUI();
+        });
+
+        // Resume Game Handler
+        btnResumeGame.addEventListener('click', () => {
+            initGameUI();
+        });
+
+        /* ================= SCORING ENGINE FOR 6-PIN BOWLING ================= */
+
+        /**
+         * Computes full frame breakdown and total score for a given player's rolls.
+         * Rules:
+         * - 6 Pins per deck.
+         * - Strike = 6 pins in roll 1. Frame ends. Bonus = sum of next 2 rolls.
+         * - Spare = roll1 + roll2 = 6 pins. Bonus = next 1 roll.
+         * - Open = roll1 + roll2 < 6 pins.
+         * - Final Frame (e.g., 10th frame):
+         *   - Up to 3 rolls if strike or spare achieved in frame 10.
+         */
+        function calculatePlayerScore(rolls, totalFrames) {
+            let score = 0;
+            let rollIdx = 0;
+            const frameDetails = [];
+
+            for (let f = 0; f < totalFrames; f++) {
+                if (rollIdx >= rolls.length) {
+                    frameDetails.push({ rolls: [], score: null, cumulative: null, isStrike: false, isSpare: false, isComplete: false });
+                    continue;
+                }
+
+                const isLastFrame = (f === totalFrames - 1);
+
+                if (!isLastFrame) {
+                    // Regular Frames (1 to totalFrames - 1)
+                    if (rolls[rollIdx] === 6) {
+                        // STRIKE
+                        const r1 = 6;
+                        const next1 = rolls[rollIdx + 1];
+                        const next2 = rolls[rollIdx + 2];
+
+                        let isComplete = (next1 !== undefined && next2 !== undefined);
+                        let frameScore = isComplete ? (6 + next1 + next2) : null;
+                        if (isComplete) score += frameScore;
+
+                        frameDetails.push({
+                            rolls: [r1],
+                            score: frameScore,
+                            cumulative: isComplete ? score : null,
+                            isStrike: true,
+                            isSpare: false,
+                            isComplete
+                        });
+                        rollIdx += 1;
+                    } else {
+                        // Non-strike 1st roll
+                        const r1 = rolls[rollIdx];
+                        const r2 = rolls[rollIdx + 1];
+
+                        if (r2 === undefined) {
+                            // Only 1 roll in frame so far
+                            frameDetails.push({
+                                rolls: [r1],
+                                score: null,
+                                cumulative: null,
+                                isStrike: false,
+                                isSpare: false,
+                                isComplete: false
+                            });
+                            rollIdx += 1;
+                        } else {
+                            // Two rolls made
+                            if (r1 + r2 === 6) {
+                                // SPARE
+                                const next1 = rolls[rollIdx + 2];
+                                let isComplete = (next1 !== undefined);
+                                let frameScore = isComplete ? (6 + next1) : null;
+                                if (isComplete) score += frameScore;
+
+                                frameDetails.push({
+                                    rolls: [r1, r2],
+                                    score: frameScore,
+                                    cumulative: isComplete ? score : null,
+                                    isStrike: false,
+                                    isSpare: true,
+                                    isComplete
+                                });
+                            } else {
+                                // OPEN FRAME
+                                let frameScore = r1 + r2;
+                                score += frameScore;
+
+                                frameDetails.push({
+                                    rolls: [r1, r2],
+                                    score: frameScore,
+                                    cumulative: score,
+                                    isStrike: false,
+                                    isSpare: false,
+                                    isComplete: true
+                                });
+                            }
+                            rollIdx += 2;
+                        }
+                    }
+                } else {
+                    // LAST FRAME (SPECIAL RULES)
+                    let fRolls = [];
+                    let r1 = rolls[rollIdx];
+                    if (r1 !== undefined) fRolls.push(r1);
+
+                    let r2 = rolls[rollIdx + 1];
+                    if (r2 !== undefined) fRolls.push(r2);
+
+                    let r3 = rolls[rollIdx + 2];
+                    if (r3 !== undefined) fRolls.push(r3);
+
+                    // Check if bonus 3rd roll was earned (Strike in r1, or Spare in r1+r2)
+                    const earnedBonus = (r1 === 6) || (r1 + r2 === 6);
+                    const isComplete = earnedBonus ? (fRolls.length === 3) : (fRolls.length === 2);
+
+                    let fTotal = fRolls.reduce((a, b) => a + b, 0);
+                    if (isComplete) score += fTotal;
+
+                    frameDetails.push({
+                        rolls: fRolls,
+                        score: isComplete ? fTotal : null,
+                        cumulative: isComplete ? score : null,
+                        isStrike: fRolls.includes(6),
+                        isSpare: !fRolls.includes(6) && (r1 + r2 === 6),
+                        isComplete
+                    });
+
+                    rollIdx += fRolls.length;
+                }
+            }
+
+            return { totalScore: score, frameDetails };
+        }
+
+        /**
+         * Helper to get current frame and roll number for active player turn
+         */
+        function getCurrentTurnInfo(player, totalFrames) {
+            const rolls = player.rolls;
+            let rollIdx = 0;
+
+            for (let f = 0; f < totalFrames; f++) {
+                const isLastFrame = (f === totalFrames - 1);
+
+                if (rollIdx >= rolls.length) {
+                    return { frame: f + 1, roll: 1, maxPins: 6, isLastFrame };
+                }
+
+                if (!isLastFrame) {
+                    if (rolls[rollIdx] === 6) {
+                        rollIdx += 1; // Strike completes frame
+                    } else if (rollIdx + 1 >= rolls.length) {
+                        // 1st roll done, waiting 2nd roll
+                        const remainingPins = 6 - rolls[rollIdx];
+                        return { frame: f + 1, roll: 2, maxPins: remainingPins, isLastFrame };
+                    } else {
+                        rollIdx += 2; // 2 rolls done in frame
+                    }
+                } else {
+                    // Frame 10
+                    const remainingInFrame = rolls.length - rollIdx;
+                    const r1 = rolls[rollIdx];
+                    const r2 = rolls[rollIdx + 1];
+
+                    if (remainingInFrame === 0) {
+                        return { frame: f + 1, roll: 1, maxPins: 6, isLastFrame };
+                    } else if (remainingInFrame === 1) {
+                        // Roll 2 of 10th frame
+                        let maxPins = (r1 === 6) ? 6 : (6 - r1);
+                        return { frame: f + 1, roll: 2, maxPins, isLastFrame };
+                    } else if (remainingInFrame === 2) {
+                        // Roll 3 of 10th frame (if bonus earned)
+                        const bonusEarned = (r1 === 6) || (r1 + r2 === 6);
+                        if (bonusEarned) {
+                            let maxPins = 6;
+                            if (r2 !== 6 && r1 + r2 !== 6) {
+                                maxPins = 6 - r2;
+                            }
+                            return { frame: f + 1, roll: 3, maxPins, isLastFrame };
+                        }
+                    }
+                }
+            }
+
+            return { isFinished: true };
+        }
+
+        /* ================= GAME UI RENDERING ================= */
+
+        function initGameUI() {
+            screenSetup.classList.add('hidden');
+            screenGame.classList.remove('hidden');
+
+            renderFrameHeaders();
+            updateTurnView();
+            renderScoreboard();
+        }
+
+        // Render Frame Column Headers in Table
+        function renderFrameHeaders() {
+            frameHeadersRow.innerHTML = '';
+            for (let i = 1; i <= gameState.totalFrames; i++) {
+                const th = document.createElement('th');
+                th.className = 'p-2 text-center border-l border-slate-800 font-bold min-w-[55px]';
+                th.innerHTML = `<span class="text-xs text-slate-400">R${i}</span>`;
+                frameHeadersRow.appendChild(th);
+            }
+        }
+
+        // Update Turn Controls (Pins layout, Player name, status)
+        function updateTurnView() {
+            if (gameState.isGameOver) return;
+
+            const currentPlayer = gameState.players[gameState.currentTurnPlayerIdx];
+            const turnInfo = getCurrentTurnInfo(currentPlayer, gameState.totalFrames);
+
+            // Check if match is completely over for all players
+            if (turnInfo.isFinished) {
+                // Try finding next player who isn't finished
+                let foundNext = false;
+                for (let i = 0; i < gameState.players.length; i++) {
+                    const nextIdx = (gameState.currentTurnPlayerIdx + i) % gameState.players.length;
+                    const info = getCurrentTurnInfo(gameState.players[nextIdx], gameState.totalFrames);
+                    if (!info.isFinished) {
+                        gameState.currentTurnPlayerIdx = nextIdx;
+                        foundNext = true;
+                        break;
+                    }
+                }
+
+                if (!foundNext) {
+                    // GAME OVER!
+                    endGame();
+                    return;
+                }
+            }
+
+            // Re-fetch current player after potential index update
+            const activePlayer = gameState.players[gameState.currentTurnPlayerIdx];
+            const activeTurnInfo = getCurrentTurnInfo(activePlayer, gameState.totalFrames);
+
+            currentPlayerName.textContent = activePlayer.name;
+            currentPlayerAvatar.textContent = activePlayer.name.charAt(0).toUpperCase();
+            currentFrameNum.textContent = `${activeTurnInfo.frame} / ${gameState.totalFrames}`;
+            currentRollNum.textContent = `${activeTurnInfo.roll}º`;
+
+            // Reset pin selections
+            selectedPinIds.clear();
+            updatePinDeckVisuals(activeTurnInfo.maxPins);
+            renderQuickButtons(activeTurnInfo.maxPins);
+            updateSelectedPinsDisplay();
+        }
+
+        // Update Pin Buttons Visual state
+        function updatePinDeckVisuals(maxPins) {
+            pinButtons.forEach(btn => {
+                const pinId = parseInt(btn.dataset.pinId, 10);
+                
+                // Reset state
+                btn.classList.remove('knocked');
+                btn.disabled = false;
+
+                // Disable pins that exceed available pins for 2nd roll if needed
+                if (pinId > maxPins) {
+                    btn.disabled = true;
+                    btn.classList.add('opacity-20', 'cursor-not-allowed');
+                } else {
+                    btn.classList.remove('opacity-20', 'cursor-not-allowed');
+                }
+
+                if (selectedPinIds.has(pinId)) {
+                    btn.classList.add('knocked');
+                }
+            });
+        }
+
+        // Render Quick Select Buttons (0, 1, 2... maxPins)
+        function renderQuickButtons(maxPins) {
+            quickButtonsGrid.innerHTML = '';
+            
+            for (let i = 0; i <= maxPins; i++) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                
+                let label = i.toString();
+                let bgClass = 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700';
+
+                if (i === 0) {
+                    label = '0 (Canaleta)';
+                    bgClass = 'bg-slate-850 hover:bg-slate-800 text-slate-400 border-slate-800 text-[11px]';
+                } else if (i === 6) {
+                    label = '6 (STRIKE!)';
+                    bgClass = 'bg-red-950 hover:bg-red-900 text-red-300 font-black border-red-800/80 text-xs';
+                }
+
+                btn.className = `py-2 px-1 rounded-xl border text-xs font-bold transition flex items-center justify-center ${bgClass}`;
+                btn.textContent = label;
+                
+                btn.addEventListener('click', () => {
+                    // Set pins 1 through i as selected
+                    selectedPinIds.clear();
+                    for (let p = 1; p <= i; p++) {
+                        selectedPinIds.add(p);
+                    }
+                    updatePinDeckVisuals(maxPins);
+                    updateSelectedPinsDisplay();
+                });
+
+                quickButtonsGrid.appendChild(btn);
+            }
+        }
+
+        // Pin Button Click Event
+        pinButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const pinId = parseInt(btn.dataset.pinId, 10);
+                if (selectedPinIds.has(pinId)) {
+                    selectedPinIds.delete(pinId);
+                } else {
+                    selectedPinIds.add(pinId);
+                }
+
+                const currentPlayer = gameState.players[gameState.currentTurnPlayerIdx];
+                const turnInfo = getCurrentTurnInfo(currentPlayer, gameState.totalFrames);
+                updatePinDeckVisuals(turnInfo.maxPins);
+                updateSelectedPinsDisplay();
+            });
+        });
+
+        function updateSelectedPinsDisplay() {
+            selectedPinsCount.textContent = selectedPinIds.size;
+        }
+
+        /* ================= TURN EXECUTION & ROTATION ================= */
+
+        // Confirm Roll Button Handler
+        btnConfirmRoll.addEventListener('click', () => {
+            const pinsKnocked = selectedPinIds.size;
+            const currentPlayer = gameState.players[gameState.currentTurnPlayerIdx];
+            const turnInfo = getCurrentTurnInfo(currentPlayer, gameState.totalFrames);
+
+            // Record roll
+            currentPlayer.rolls.push(pinsKnocked);
+
+            // Show animation/celebration toast for Strike or Spare
+            if (pinsKnocked === 6 && turnInfo.roll === 1) {
+                showToastCelebration('STRIKE! 💥', 'bg-red-500 text-white');
+            } else if (turnInfo.roll === 2 && (currentPlayer.rolls[currentPlayer.rolls.length - 2] + pinsKnocked === 6)) {
+                showToastCelebration('SPARE! ✨', 'bg-blue-500 text-white');
+            }
+
+            // Determine if turn switches to next player
+            // Regular frames: turn ends if Strike (roll 1 = 6) OR if roll 2 completes
+            const isLastFrame = turnInfo.isLastFrame;
+            let turnEnded = false;
+
+            if (!isLastFrame) {
+                if (pinsKnocked === 6 || turnInfo.roll === 2) {
+                    turnEnded = true;
+                }
+            } else {
+                // Last frame: check if rolls finished
+                const frameTurnInfo = getCurrentTurnInfo(currentPlayer, gameState.totalFrames);
+                if (frameTurnInfo.frame !== gameState.totalFrames || frameTurnInfo.isFinished) {
+                    turnEnded = true;
+                }
+            }
+
+            if (turnEnded) {
+                // Move to next player
+                gameState.currentTurnPlayerIdx = (gameState.currentTurnPlayerIdx + 1) % gameState.players.length;
+            }
+
+            saveToLocalStorage();
+            updateTurnView();
+            renderScoreboard();
+        });
+
+        // Undo Last Roll
+        btnUndoRoll.addEventListener('click', () => {
+            // Find last player who rolled
+            let prevPlayerIdx = (gameState.currentTurnPlayerIdx - 1 + gameState.players.length) % gameState.players.length;
+            
+            // Check if current player has rolls to undo first
+            const currentPlayer = gameState.players[gameState.currentTurnPlayerIdx];
+            
+            if (currentPlayer.rolls.length > 0) {
+                currentPlayer.rolls.pop();
+            } else if (gameState.players[prevPlayerIdx].rolls.length > 0) {
+                gameState.players[prevPlayerIdx].rolls.pop();
+                gameState.currentTurnPlayerIdx = prevPlayerIdx;
+            } else {
+                return; // Nothing to undo
+            }
+
+            saveToLocalStorage();
+            updateTurnView();
+            renderScoreboard();
+        });
+
+        // Floating celebration message animation
+        function showToastCelebration(text, bgClasses) {
+            const toast = document.createElement('div');
+            toast.className = `toast-celebration absolute px-6 py-2.5 rounded-full font-black text-lg tracking-wider shadow-2xl z-30 ${bgClasses}`;
+            toast.textContent = text;
+            toastOverlay.appendChild(toast);
+
+            setTimeout(() => {
+                toast.remove();
+            }, 1800);
+        }
+
+        /* ================= SCOREBOARD MATRIX RENDERING ================= */
+
+        function renderScoreboard() {
+            scoreboardTbody.innerHTML = '';
+
+            const leaderList = [];
+
+            gameState.players.forEach((player, pIdx) => {
+                const { totalScore, frameDetails } = calculatePlayerScore(player.rolls, gameState.totalFrames);
+                leaderList.push({ name: player.name, score: totalScore, playerIdx: pIdx });
+
+                const isCurrentTurn = (pIdx === gameState.currentTurnPlayerIdx) && !gameState.isGameOver;
+
+                const tr = document.createElement('tr');
+                tr.className = isCurrentTurn ? 'bg-cyan-950/30 font-medium' : 'hover:bg-slate-950/40';
+
+                // Player Column
+                let html = `
+                    <td class="p-3">
+                        <div class="flex items-center gap-2">
+                            ${isCurrentTurn ? '<span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>' : ''}
+                            <span class="font-bold ${isCurrentTurn ? 'text-cyan-300' : 'text-slate-200'}">${escapeHtml(player.name)}</span>
+                        </div>
+                    </td>
+                `;
+
+                // Frames Columns
+                for (let f = 0; f < gameState.totalFrames; f++) {
+                    const detail = frameDetails[f] || { rolls: [], score: null, cumulative: null };
+                    
+                    let roll1Txt = detail.rolls[0] !== undefined ? (detail.rolls[0] === 6 ? 'X' : (detail.rolls[0] === 0 ? '-' : detail.rolls[0])) : '';
+                    let roll2Txt = detail.rolls[1] !== undefined ? (detail.isSpare ? '/' : (detail.rolls[1] === 0 ? '-' : detail.rolls[1])) : '';
+                    let roll3Txt = detail.rolls[2] !== undefined ? (detail.rolls[2] === 6 ? 'X' : (detail.rolls[2] === 0 ? '-' : detail.rolls[2])) : '';
+
+                    if (detail.isStrike && f < gameState.totalFrames - 1) {
+                        roll1Txt = '';
+                        roll2Txt = 'X';
+                    }
+
+                    html += `
+                        <td class="p-2 border-l border-slate-800 text-center">
+                            <div class="flex justify-end gap-1 text-[11px] font-mono mb-1 text-slate-400 border-b border-slate-800/60 pb-0.5">
+                                <span class="${roll1Txt === 'X' ? 'text-red-400 font-bold' : ''}">${roll1Txt}</span>
+                                <span class="${roll2Txt === '/' ? 'text-blue-400 font-bold' : (roll2Txt === 'X' ? 'text-red-400 font-bold' : '')}">${roll2Txt}</span>
+                                ${f === gameState.totalFrames - 1 ? `<span class="text-amber-400 font-bold">${roll3Txt}</span>` : ''}
+                            </div>
+                            <div class="text-xs font-black text-slate-200">
+                                ${detail.cumulative !== null ? detail.cumulative : ''}
+                            </div>
+                        </td>
+                    `;
+                }
+
+                // Total Column
+                html += `
+                    <td class="p-3 text-center border-l border-slate-800 bg-slate-950/60">
+                        <span class="text-base font-black text-cyan-400">${totalScore}</span>
+                    </td>
+                `;
+
+                tr.innerHTML = html;
+                scoreboardTbody.appendChild(tr);
+            });
+
+            // Update Live Leaderboard
+            renderLiveLeaderboard(leaderList);
+        }
+
+        // Mini Leaderboard
+        function renderLiveLeaderboard(leaderList) {
+            leaderList.sort((a, b) => b.score - a.score);
+            liveLeaderboard.innerHTML = '';
+
+            leaderList.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800';
+
+                let medal = `<span class="w-5 text-center text-xs font-bold text-slate-500">${index + 1}</span>`;
+                if (index === 0) medal = `<span class="text-amber-400 text-sm">🥇</span>`;
+                if (index === 1) medal = `<span class="text-slate-300 text-sm">🥈</span>`;
+                if (index === 2) medal = `<span class="text-amber-600 text-sm">🥉</span>`;
+
+                div.innerHTML = `
+                    <div class="flex items-center gap-2.5">
+                        ${medal}
+                        <span class="text-xs font-bold text-slate-200">${escapeHtml(item.name)}</span>
+                    </div>
+                    <span class="text-sm font-black text-cyan-400">${item.score} pts</span>
+                `;
+                liveLeaderboard.appendChild(div);
+            });
+        }
+
+        /* ================= GAME OVER LOGIC ================= */
+
+        function endGame() {
+            gameState.isGameOver = true;
+            saveToLocalStorage();
+
+            // Calculate final scores
+            const results = gameState.players.map(p => {
+                const { totalScore } = calculatePlayerScore(p.rolls, gameState.totalFrames);
+                return { name: p.name, score: totalScore };
+            });
+
+            results.sort((a, b) => b.score - a.score);
+
+            // Render Podium
+            podiumContainer.innerHTML = '';
+            results.forEach((res, index) => {
+                const row = document.createElement('div');
+                row.className = `p-3.5 rounded-xl flex items-center justify-between border ${
+                    index === 0 
+                        ? 'bg-amber-950/40 border-amber-500/50 text-amber-300' 
+                        : 'bg-slate-950 border-slate-800 text-slate-300'
+                }`;
+
+                let icon = `#${index + 1}`;
+                if (index === 0) icon = '🥇 1º Lugar';
+                if (index === 1) icon = '🥈 2º Lugar';
+                if (index === 2) icon = '🥉 3º Lugar';
+
+                row.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <span class="font-bold text-xs">${icon}</span>
+                        <span class="font-black text-sm text-slate-100">${escapeHtml(res.name)}</span>
+                    </div>
+                    <span class="text-base font-black text-cyan-400">${res.score} PTS</span>
+                `;
+                podiumContainer.appendChild(row);
+            });
+
+            modalGameover.classList.remove('hidden');
+        }
+
+        // Modal Action: Restart with same players
+        btnRestartSame.addEventListener('click', () => {
+            modalGameover.classList.add('hidden');
+            gameState.players.forEach(p => p.rolls = []);
+            gameState.currentTurnPlayerIdx = 0;
+            gameState.isGameOver = false;
+            saveToLocalStorage();
+            initGameUI();
+        });
+
+        // Modal Action: New Match
+        btnNewPlayers.addEventListener('click', () => {
+            modalGameover.classList.add('hidden');
+            resetToSetup();
+        });
+
+        /* ================= RESET & UTILS ================= */
+
+        // Reset App Button (Header)
+        btnResetApp.addEventListener('click', () => {
+            showConfirmModal('Nova Partida', 'Deseja reiniciar e voltar para o cadastro de jogadores?', () => {
+                resetToSetup();
+            });
+        });
+
+        function resetToSetup() {
+            clearLocalStorage();
+            gameState = {
+                players: [],
+                totalFrames: 10,
+                currentTurnPlayerIdx: 0,
+                isGameStarted: false,
+                isGameOver: false,
+                history: []
+            };
+            screenGame.classList.add('hidden');
+            screenSetup.classList.remove('hidden');
+            restoreBanner.classList.add('hidden');
+            renderSetupPlayersList();
+        }
+
+        // Custom Confirmation Modal Helper
+        function showConfirmModal(title, message, onOk) {
+            confirmTitle.textContent = title;
+            confirmMsg.textContent = message;
+            confirmCallback = onOk;
+            modalConfirm.classList.remove('hidden');
+        }
+
+        btnConfirmCancel.addEventListener('click', () => {
+            modalConfirm.classList.add('hidden');
+            confirmCallback = null;
+        });
+
+        btnConfirmOk.addEventListener('click', () => {
+            modalConfirm.classList.add('hidden');
+            if (confirmCallback) confirmCallback();
+        });
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>"']/g, function(m) {
+                return {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                }[m];
+            });
+        }
+
+        /* ================= INITIALIZATION ================= */
+        window.addEventListener('load', () => {
+            const savedState = loadFromLocalStorage();
+            if (savedState && savedState.players && savedState.players.length > 0) {
+                gameState = savedState;
+                if (gameState.isGameStarted && !gameState.isGameOver) {
+                    restoreBanner.classList.remove('hidden');
+                    document.getElementById('restore-info').textContent = 
+                        `Partida com ${gameState.players.length} jogador(es) (${gameState.totalFrames} frames).`;
+                }
+            }
+            renderSetupPlayersList();
+        });
+    </script>
+</body>
+</html>
