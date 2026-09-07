@@ -400,803 +400,1526 @@
     </footer>
 
     <script>
-        /* JavaScript Application State & Engine */
+    // ============================================================
+    // ESTADO DO JOGO
+    // ============================================================
 
-        const STORAGE_KEY = 'bowling_6pin_app_state_v1';
+    let gameState = {
+        players: [],
+        totalFrames: 10,
+        currentTurnPlayerIdx: 0,
+        isGameStarted: false,
+        isGameOver: false,
+        history: []
+    };
 
-        // State Schema
-        let gameState = {
-            players: [], // Array of { id, name, rolls: [] }
+    let confirmCallback = null;
+
+    // ============================================================
+    // ELEMENTOS DA INTERFACE
+    // ============================================================
+
+    const screenSetup = document.getElementById('screen-setup');
+    const screenGame = document.getElementById('screen-game');
+
+    const playerNameInput = document.getElementById('player-name');
+    const btnAddPlayer = document.getElementById('btn-add-player');
+    const setupPlayersList = document.getElementById('setup-players-list');
+    const btnStartGame = document.getElementById('btn-start-game');
+
+    const currentPlayerName = document.getElementById('current-player-name');
+    const currentPlayerNumber = document.getElementById('current-player-number');
+
+    const pinsButtons = document.querySelectorAll('.pin-btn');
+
+    const btnUndo = document.getElementById('btn-undo');
+    const btnResetApp = document.getElementById('btn-reset-app');
+
+    const scoreboard = document.getElementById('scoreboard');
+    const liveLeaderboard = document.getElementById('live-leaderboard');
+
+    const modalGameover = document.getElementById('modal-gameover');
+    const podiumContainer = document.getElementById('podium-container');
+
+    const btnRestartSame = document.getElementById('btn-restart-same');
+    const btnNewPlayers = document.getElementById('btn-new-players');
+
+    const modalConfirm = document.getElementById('modal-confirm');
+    const confirmTitle = document.getElementById('confirm-title');
+    const confirmMsg = document.getElementById('confirm-msg');
+    const btnConfirmCancel = document.getElementById('btn-confirm-cancel');
+    const btnConfirmOk = document.getElementById('btn-confirm-ok');
+
+    const restoreBanner = document.getElementById('restore-banner');
+
+    // ============================================================
+    // LOCAL STORAGE
+    // ============================================================
+
+    function saveToLocalStorage() {
+        localStorage.setItem(
+            'boliche6pinos',
+            JSON.stringify(gameState)
+        );
+    }
+
+    function loadFromLocalStorage() {
+        try {
+            const data = localStorage.getItem('boliche6pinos');
+
+            if (!data) {
+                return null;
+            }
+
+            return JSON.parse(data);
+
+        } catch (error) {
+            console.error('Erro ao carregar partida:', error);
+            return null;
+        }
+    }
+
+    function clearLocalStorage() {
+        localStorage.removeItem('boliche6pinos');
+    }
+
+    // ============================================================
+    // CONFIGURAÇÃO DOS JOGADORES
+    // ============================================================
+
+    function renderSetupPlayersList() {
+
+        setupPlayersList.innerHTML = '';
+
+        if (gameState.players.length === 0) {
+
+            setupPlayersList.innerHTML = `
+                <div class="text-center text-slate-500 py-6">
+                    <i class="fa-solid fa-users text-2xl mb-2"></i>
+                    <p>Nenhum jogador adicionado</p>
+                </div>
+            `;
+
+            btnStartGame.disabled = true;
+            return;
+        }
+
+        gameState.players.forEach((player, index) => {
+
+            const div = document.createElement('div');
+
+            div.className =
+                'flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-3';
+
+            div.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center font-black">
+                        ${index + 1}
+                    </span>
+
+                    <span class="font-bold text-slate-200">
+                        ${escapeHtml(player.name)}
+                    </span>
+                </div>
+
+                <button
+                    class="remove-player text-red-400 hover:text-red-300 transition"
+                    data-index="${index}"
+                    title="Remover jogador"
+                >
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            `;
+
+            setupPlayersList.appendChild(div);
+        });
+
+        document.querySelectorAll('.remove-player').forEach(button => {
+
+            button.addEventListener('click', () => {
+
+                const index = Number(button.dataset.index);
+
+                gameState.players.splice(index, 1);
+
+                renderSetupPlayersList();
+            });
+        });
+
+        btnStartGame.disabled = gameState.players.length === 0;
+    }
+
+    function addPlayer() {
+
+        const name = playerNameInput.value.trim();
+
+        if (!name) {
+            playerNameInput.focus();
+            return;
+        }
+
+        if (gameState.players.length >= 20) {
+            alert('Máximo de 20 jogadores.');
+            return;
+        }
+
+        gameState.players.push({
+            name: name,
+            rolls: []
+        });
+
+        playerNameInput.value = '';
+
+        renderSetupPlayersList();
+
+        playerNameInput.focus();
+    }
+
+    btnAddPlayer.addEventListener('click', addPlayer);
+
+    playerNameInput.addEventListener('keydown', event => {
+
+        if (event.key === 'Enter') {
+            addPlayer();
+        }
+    });
+
+    // ============================================================
+    // INICIAR PARTIDA
+    // ============================================================
+
+    btnStartGame.addEventListener('click', () => {
+
+        if (gameState.players.length === 0) {
+            return;
+        }
+
+        gameState.isGameStarted = true;
+        gameState.isGameOver = false;
+        gameState.currentTurnPlayerIdx = 0;
+        gameState.history = [];
+
+        gameState.players.forEach(player => {
+            player.rolls = [];
+        });
+
+        saveToLocalStorage();
+
+        screenSetup.classList.add('hidden');
+        screenGame.classList.remove('hidden');
+
+        restoreBanner.classList.add('hidden');
+
+        initGameUI();
+    });
+
+    // ============================================================
+    // INICIALIZAR INTERFACE DO JOGO
+    // ============================================================
+
+    function initGameUI() {
+
+        updateCurrentPlayer();
+
+        renderScoreboard();
+
+        renderLeaderboard();
+
+        updatePinButtons();
+
+        updateTurnInfo();
+    }
+
+    function updateCurrentPlayer() {
+
+        const player =
+            gameState.players[gameState.currentTurnPlayerIdx];
+
+        if (!player) {
+            return;
+        }
+
+        currentPlayerName.textContent = player.name;
+
+        if (currentPlayerNumber) {
+            currentPlayerNumber.textContent =
+                `${gameState.currentTurnPlayerIdx + 1}/${gameState.players.length}`;
+        }
+    }
+
+    // ============================================================
+    // CALCULAR FRAME ATUAL
+    // ============================================================
+
+    function getCurrentFrameInfo(rolls) {
+
+        let rollIdx = 0;
+
+        for (let frame = 0; frame < gameState.totalFrames; frame++) {
+
+            const isLastFrame =
+                frame === gameState.totalFrames - 1;
+
+            if (rollIdx >= rolls.length) {
+                return {
+                    frame,
+                    rollIdx,
+                    isLastFrame
+                };
+            }
+
+            if (isLastFrame) {
+                return {
+                    frame,
+                    rollIdx,
+                    isLastFrame: true
+                };
+            }
+
+            // Strike
+            if (rolls[rollIdx] === 6) {
+
+                rollIdx += 1;
+                continue;
+            }
+
+            // Segundo lançamento ainda não existe
+            if (rolls[rollIdx + 1] === undefined) {
+
+                return {
+                    frame,
+                    rollIdx,
+                    isLastFrame: false
+                };
+            }
+
+            // Frame normal/spare
+            rollIdx += 2;
+        }
+
+        return {
+            frame: gameState.totalFrames - 1,
+            rollIdx,
+            isLastFrame: true
+        };
+    }
+
+    // ============================================================
+    // PONTUAÇÃO
+    // ============================================================
+
+    function calculatePlayerScore(rolls, totalFrames) {
+
+        let score = 0;
+        let rollIdx = 0;
+
+        const frameDetails = [];
+
+        for (let f = 0; f < totalFrames; f++) {
+
+            // ----------------------------------------------------
+            // SEM LANÇAMENTOS
+            // ----------------------------------------------------
+
+            if (rollIdx >= rolls.length) {
+
+                frameDetails.push({
+                    rolls: [],
+                    score: null,
+                    cumulative: null,
+                    isStrike: false,
+                    isSpare: false,
+                    isComplete: false
+                });
+
+                continue;
+            }
+
+            const isLastFrame =
+                f === totalFrames - 1;
+
+            // ====================================================
+            // FRAMES 1-9
+            // ====================================================
+
+            if (!isLastFrame) {
+
+                const r1 = rolls[rollIdx];
+
+                // ------------------------------------------------
+                // STRIKE
+                // ------------------------------------------------
+
+                if (r1 === 6) {
+
+                    const next1 = rolls[rollIdx + 1];
+                    const next2 = rolls[rollIdx + 2];
+
+                    /*
+                     * CORREÇÃO:
+                     *
+                     * O Strike já vale 6 pontos imediatamente.
+                     *
+                     * Se os próximos lançamentos existirem,
+                     * eles são adicionados como bônus.
+                     */
+
+                    let frameScore = 6;
+
+                    if (next1 !== undefined) {
+                        frameScore += next1;
+                    }
+
+                    if (next2 !== undefined) {
+                        frameScore += next2;
+                    }
+
+                    const isComplete =
+                        next1 !== undefined &&
+                        next2 !== undefined;
+
+                    score += frameScore;
+
+                    frameDetails.push({
+                        rolls: [6],
+                        score: frameScore,
+                        cumulative: score,
+                        isStrike: true,
+                        isSpare: false,
+                        isComplete: isComplete
+                    });
+
+                    rollIdx += 1;
+
+                    continue;
+                }
+
+                // ------------------------------------------------
+                // SEGUNDO LANÇAMENTO
+                // ------------------------------------------------
+
+                const r2 = rolls[rollIdx + 1];
+
+                if (r2 === undefined) {
+
+                    frameDetails.push({
+                        rolls: [r1],
+                        score: null,
+                        cumulative: null,
+                        isStrike: false,
+                        isSpare: false,
+                        isComplete: false
+                    });
+
+                    rollIdx += 1;
+
+                    continue;
+                }
+
+                // ------------------------------------------------
+                // SPARE
+                // ------------------------------------------------
+
+                if (r1 + r2 === 6) {
+
+                    const next1 = rolls[rollIdx + 2];
+
+                    let frameScore = 6;
+
+                    if (next1 !== undefined) {
+                        frameScore += next1;
+                    }
+
+                    const isComplete =
+                        next1 !== undefined;
+
+                    score += frameScore;
+
+                    frameDetails.push({
+                        rolls: [r1, r2],
+                        score: frameScore,
+                        cumulative: score,
+                        isStrike: false,
+                        isSpare: true,
+                        isComplete: isComplete
+                    });
+
+                    rollIdx += 2;
+
+                    continue;
+                }
+
+                // ------------------------------------------------
+                // OPEN FRAME
+                // ------------------------------------------------
+
+                const frameScore = r1 + r2;
+
+                score += frameScore;
+
+                frameDetails.push({
+                    rolls: [r1, r2],
+                    score: frameScore,
+                    cumulative: score,
+                    isStrike: false,
+                    isSpare: false,
+                    isComplete: true
+                });
+
+                rollIdx += 2;
+            }
+
+            // ====================================================
+            // ÚLTIMO FRAME
+            // ====================================================
+
+            else {
+
+                const frameRolls = [];
+
+                const r1 = rolls[rollIdx];
+
+                if (r1 !== undefined) {
+                    frameRolls.push(r1);
+                }
+
+                const r2 = rolls[rollIdx + 1];
+
+                if (r2 !== undefined) {
+                    frameRolls.push(r2);
+                }
+
+                const r3 = rolls[rollIdx + 2];
+
+                if (r3 !== undefined) {
+                    frameRolls.push(r3);
+                }
+
+                let frameScore = 0;
+
+                let isStrike = false;
+                let isSpare = false;
+                let isComplete = false;
+
+                // -----------------------------------------------
+                // STRIKE NO ÚLTIMO FRAME
+                // -----------------------------------------------
+
+                if (r1 === 6) {
+
+                    isStrike = true;
+
+                    frameScore = 6;
+
+                    if (r2 !== undefined) {
+                        frameScore += r2;
+                    }
+
+                    if (r3 !== undefined) {
+                        frameScore += r3;
+                    }
+
+                    isComplete =
+                        r2 !== undefined &&
+                        r3 !== undefined;
+                }
+
+                // -----------------------------------------------
+                // SEGUNDO LANÇAMENTO
+                // -----------------------------------------------
+
+                else if (r2 !== undefined) {
+
+                    // Spare
+                    if (r1 + r2 === 6) {
+
+                        isSpare = true;
+
+                        frameScore = 6;
+
+                        if (r3 !== undefined) {
+                            frameScore += r3;
+                        }
+
+                        isComplete =
+                            r3 !== undefined;
+                    }
+
+                    // Open
+                    else {
+
+                        frameScore = r1 + r2;
+
+                        isComplete = true;
+                    }
+                }
+
+                if (frameRolls.length > 0) {
+                    score += frameScore;
+                }
+
+                frameDetails.push({
+                    rolls: frameRolls,
+                    score:
+                        frameRolls.length > 0
+                            ? frameScore
+                            : null,
+                    cumulative:
+                        frameRolls.length > 0
+                            ? score
+                            : null,
+                    isStrike: isStrike,
+                    isSpare: isSpare,
+                    isComplete: isComplete
+                });
+
+                rollIdx += frameRolls.length;
+            }
+        }
+
+        return {
+            totalScore: score,
+            frameDetails: frameDetails
+        };
+    }
+
+    // ============================================================
+    // BOTÕES DE PINOS
+    // ============================================================
+
+    function updatePinButtons() {
+
+        const player =
+            gameState.players[gameState.currentTurnPlayerIdx];
+
+        if (!player) {
+            return;
+        }
+
+        const frameInfo =
+            getCurrentFrameInfo(player.rolls);
+
+        let pinsAvailable = 6;
+
+        // --------------------------------------------------------
+        // Se já existe um primeiro lançamento neste frame
+        // --------------------------------------------------------
+
+        if (
+            !frameInfo.isLastFrame &&
+            player.rolls[frameInfo.rollIdx] !== undefined
+        ) {
+
+            const firstRoll =
+                player.rolls[frameInfo.rollIdx];
+
+            if (firstRoll !== 6) {
+
+                pinsAvailable =
+                    6 - firstRoll;
+            }
+        }
+
+        pinsButtons.forEach(button => {
+
+            const pins =
+                Number(button.dataset.pins);
+
+            button.disabled =
+                pins > pinsAvailable;
+
+            if (button.disabled) {
+                button.classList.add(
+                    'opacity-40',
+                    'cursor-not-allowed'
+                );
+            } else {
+                button.classList.remove(
+                    'opacity-40',
+                    'cursor-not-allowed'
+                );
+            }
+        });
+    }
+
+    // ============================================================
+    // REGISTRAR LANÇAMENTO
+    // ============================================================
+
+    function registerRoll(pins) {
+
+        if (gameState.isGameOver) {
+            return;
+        }
+
+        const player =
+            gameState.players[gameState.currentTurnPlayerIdx];
+
+        if (!player) {
+            return;
+        }
+
+        const frameInfo =
+            getCurrentFrameInfo(player.rolls);
+
+        // --------------------------------------------------------
+        // Verificar limite de pinos
+        // --------------------------------------------------------
+
+        if (!frameInfo.isLastFrame) {
+
+            const currentRoll =
+                player.rolls[frameInfo.rollIdx];
+
+            if (currentRoll !== undefined && currentRoll !== 6) {
+
+                const remaining =
+                    6 - currentRoll;
+
+                if (pins > remaining) {
+                    return;
+                }
+            }
+        }
+
+        // --------------------------------------------------------
+        // Salvar estado anterior para desfazer
+        // --------------------------------------------------------
+
+        gameState.history.push(
+            JSON.stringify(gameState)
+        );
+
+        // --------------------------------------------------------
+        // Adicionar lançamento
+        // --------------------------------------------------------
+
+        player.rolls.push(pins);
+
+        saveToLocalStorage();
+
+        // --------------------------------------------------------
+        // Mensagens
+        // --------------------------------------------------------
+
+        if (pins === 6) {
+
+            showToast(
+                '🎳 STRIKE!',
+                'Você derrubou todos os 6 pinos!'
+            );
+        }
+
+        else {
+
+            const info =
+                getCurrentFrameInfo(player.rolls);
+
+            const idx =
+                info.rollIdx;
+
+            const r1 =
+                player.rolls[idx];
+
+            const r2 =
+                player.rolls[idx + 1];
+
+            if (
+                r1 !== undefined &&
+                r2 !== undefined &&
+                r1 !== 6 &&
+                r1 + r2 === 6
+            ) {
+
+                showToast(
+                    '🔥 SPARE!',
+                    'Você completou os 6 pinos!'
+                );
+            }
+        }
+
+        // --------------------------------------------------------
+        // Atualizar interface
+        // --------------------------------------------------------
+
+        renderScoreboard();
+
+        renderLeaderboard();
+
+        updatePinButtons();
+
+        // --------------------------------------------------------
+        // Verificar se o jogador terminou o frame
+        // --------------------------------------------------------
+
+        if (isTurnComplete(player)) {
+
+            setTimeout(() => {
+
+                nextTurn();
+
+            }, 600);
+        }
+
+        else {
+
+            updateTurnInfo();
+        }
+    }
+
+    // ============================================================
+    // VERIFICAR SE FRAME TERMINOU
+    // ============================================================
+
+    function isTurnComplete(player) {
+
+        const rolls =
+            player.rolls;
+
+        const info =
+            getCurrentFrameInfo(rolls);
+
+        if (info.isLastFrame) {
+
+            const idx =
+                info.rollIdx;
+
+            const r1 =
+                rolls[idx];
+
+            const r2 =
+                rolls[idx + 1];
+
+            const r3 =
+                rolls[idx + 2];
+
+            if (r1 === undefined) {
+                return false;
+            }
+
+            // Strike precisa de 3 lançamentos
+            if (r1 === 6) {
+
+                return (
+                    r2 !== undefined &&
+                    r3 !== undefined
+                );
+            }
+
+            // Spare precisa de 3 lançamentos
+            if (
+                r2 !== undefined &&
+                r1 + r2 === 6
+            ) {
+
+                return r3 !== undefined;
+            }
+
+            // Open termina no segundo lançamento
+            return r2 !== undefined;
+        }
+
+        const r1 =
+            rolls[info.rollIdx];
+
+        if (r1 === undefined) {
+            return false;
+        }
+
+        // Strike encerra o frame imediatamente
+        if (r1 === 6) {
+            return true;
+        }
+
+        // Caso contrário precisa de segundo lançamento
+        return rolls[info.rollIdx + 1] !== undefined;
+    }
+
+    // ============================================================
+    // PRÓXIMO JOGADOR
+    // ============================================================
+
+    function nextTurn() {
+
+        const current =
+            gameState.currentTurnPlayerIdx;
+
+        let next =
+            current + 1;
+
+        if (next >= gameState.players.length) {
+
+            next = 0;
+        }
+
+        gameState.currentTurnPlayerIdx = next;
+
+        saveToLocalStorage();
+
+        // --------------------------------------------------------
+        // Verificar fim da partida
+        // --------------------------------------------------------
+
+        if (allPlayersFinished()) {
+
+            endGame();
+
+            return;
+        }
+
+        updateCurrentPlayer();
+
+        updatePinButtons();
+
+        updateTurnInfo();
+
+        renderScoreboard();
+
+        renderLeaderboard();
+    }
+
+    // ============================================================
+    // VERIFICAR FIM DO JOGO
+    // ============================================================
+
+    function allPlayersFinished() {
+
+        return gameState.players.every(player => {
+
+            return hasPlayerFinished(player);
+        });
+    }
+
+    function hasPlayerFinished(player) {
+
+        let rollIdx = 0;
+
+        for (let f = 0; f < gameState.totalFrames; f++) {
+
+            const isLastFrame =
+                f === gameState.totalFrames - 1;
+
+            if (rollIdx >= player.rolls.length) {
+                return false;
+            }
+
+            if (!isLastFrame) {
+
+                if (player.rolls[rollIdx] === 6) {
+
+                    rollIdx++;
+
+                } else {
+
+                    if (
+                        player.rolls[rollIdx + 1] === undefined
+                    ) {
+                        return false;
+                    }
+
+                    rollIdx += 2;
+                }
+            }
+
+            else {
+
+                const r1 =
+                    player.rolls[rollIdx];
+
+                const r2 =
+                    player.rolls[rollIdx + 1];
+
+                const r3 =
+                    player.rolls[rollIdx + 2];
+
+                if (r1 === undefined) {
+                    return false;
+                }
+
+                if (r1 === 6) {
+
+                    return (
+                        r2 !== undefined &&
+                        r3 !== undefined
+                    );
+                }
+
+                if (r2 === undefined) {
+                    return false;
+                }
+
+                if (r1 + r2 === 6) {
+
+                    return r3 !== undefined;
+                }
+
+                return true;
+            }
+        }
+
+        return true;
+    }
+
+    // ============================================================
+    // DESFAZER
+    // ============================================================
+
+    btnUndo.addEventListener('click', () => {
+
+        if (gameState.history.length === 0) {
+
+            showToast(
+                '⚠️ Nada para desfazer',
+                'Não há lançamento anterior.'
+            );
+
+            return;
+        }
+
+        const previous =
+            gameState.history.pop();
+
+        gameState =
+            JSON.parse(previous);
+
+        saveToLocalStorage();
+
+        initGameUI();
+
+        showToast(
+            '↩️ Desfeito',
+            'O último lançamento foi removido.'
+        );
+    });
+
+    // ============================================================
+    // ATUALIZAR INFORMAÇÕES DO TURNO
+    // ============================================================
+
+    function updateTurnInfo() {
+
+        const player =
+            gameState.players[
+                gameState.currentTurnPlayerIdx
+            ];
+
+        if (!player) {
+            return;
+        }
+
+        const info =
+            getCurrentFrameInfo(player.rolls);
+
+        const frameNumber =
+            info.frame + 1;
+
+        const frameElements =
+            document.querySelectorAll('.current-frame');
+
+        frameElements.forEach(element => {
+
+            element.textContent =
+                `Frame ${frameNumber}`;
+        });
+    }
+
+    // ============================================================
+    // PLACAR
+    // ============================================================
+
+    function renderScoreboard() {
+
+        if (!scoreboard) {
+            return;
+        }
+
+        scoreboard.innerHTML = '';
+
+        gameState.players.forEach((player, playerIndex) => {
+
+            const result =
+                calculatePlayerScore(
+                    player.rolls,
+                    gameState.totalFrames
+                );
+
+            const row =
+                document.createElement('div');
+
+            row.className =
+                'bg-slate-900 border border-slate-800 rounded-xl p-4 mb-3';
+
+            let framesHtml = '';
+
+            result.frameDetails.forEach(
+                (frame, index) => {
+
+                    let value = '-';
+
+                    if (frame.score !== null) {
+                        value = frame.score;
+                    }
+
+                    let symbol = '';
+
+                    if (frame.isStrike) {
+                        symbol = '🎳';
+                    }
+
+                    else if (frame.isSpare) {
+                        symbol = '/';
+                    }
+
+                    framesHtml += `
+                        <div class="min-w-[55px] text-center">
+                            <div class="text-[10px] text-slate-500 font-bold mb-1">
+                                ${index + 1}
+                            </div>
+
+                            <div class="
+                                bg-slate-950
+                                border
+                                border-slate-800
+                                rounded-lg
+                                px-2
+                                py-2
+                                min-h-[42px]
+                                flex
+                                flex-col
+                                items-center
+                                justify-center
+                            ">
+                                ${
+                                    symbol
+                                    ? `<span class="text-sm">${symbol}</span>`
+                                    : ''
+                                }
+
+                                <span class="text-sm font-black text-slate-200">
+                                    ${value}
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                }
+            );
+
+            row.innerHTML = `
+                <div class="flex items-center justify-between mb-3">
+
+                    <div class="flex items-center gap-3">
+
+                        <div class="
+                            w-9
+                            h-9
+                            rounded-lg
+                            bg-cyan-500/10
+                            text-cyan-400
+                            flex
+                            items-center
+                            justify-center
+                            font-black
+                        ">
+                            ${playerIndex + 1}
+                        </div>
+
+                        <div>
+                            <div class="font-black text-slate-100">
+                                ${escapeHtml(player.name)}
+                            </div>
+
+                            <div class="text-[10px] text-slate-500">
+                                ${player.rolls.length} lançamento(s)
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div class="text-right">
+
+                        <div class="text-[10px] uppercase text-slate-500 font-bold">
+                            Total
+                        </div>
+
+                        <div class="text-2xl font-black text-cyan-400">
+                            ${result.totalScore}
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="flex gap-2 overflow-x-auto pb-1">
+                    ${framesHtml}
+                </div>
+            `;
+
+            scoreboard.appendChild(row);
+        });
+    }
+
+    // ============================================================
+    // RANKING AO VIVO
+    // ============================================================
+
+    function renderLeaderboard() {
+
+        if (!liveLeaderboard) {
+            return;
+        }
+
+        liveLeaderboard.innerHTML = '';
+
+        const results =
+            gameState.players.map(player => {
+
+                const result =
+                    calculatePlayerScore(
+                        player.rolls,
+                        gameState.totalFrames
+                    );
+
+                return {
+                    name: player.name,
+                    score: result.totalScore
+                };
+            });
+
+        results.sort(
+            (a, b) => b.score - a.score
+        );
+
+        results.forEach((item, index) => {
+
+            const div =
+                document.createElement('div');
+
+            div.className =
+                'flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg p-2.5';
+
+            let medal =
+                `<span class="w-5 text-center text-xs font-bold text-slate-500">${index + 1}</span>`;
+
+            if (index === 0) {
+                medal =
+                    `<span class="text-amber-400 text-sm">🥇</span>`;
+            }
+
+            if (index === 1) {
+                medal =
+                    `<span class="text-slate-300 text-sm">🥈</span>`;
+            }
+
+            if (index === 2) {
+                medal =
+                    `<span class="text-amber-600 text-sm">🥉</span>`;
+            }
+
+            div.innerHTML = `
+                <div class="flex items-center gap-2.5">
+
+                    ${medal}
+
+                    <span class="text-xs font-bold text-slate-200">
+                        ${escapeHtml(item.name)}
+                    </span>
+
+                </div>
+
+                <span class="text-sm font-black text-cyan-400">
+                    ${item.score} pts
+                </span>
+            `;
+
+            liveLeaderboard.appendChild(div);
+        });
+    }
+
+    // ============================================================
+    // FINALIZAR PARTIDA
+    // ============================================================
+
+    function endGame() {
+
+        gameState.isGameOver = true;
+
+        saveToLocalStorage();
+
+        const results =
+            gameState.players.map(player => {
+
+                const result =
+                    calculatePlayerScore(
+                        player.rolls,
+                        gameState.totalFrames
+                    );
+
+                return {
+                    name: player.name,
+                    score: result.totalScore
+                };
+            });
+
+        results.sort(
+            (a, b) => b.score - a.score
+        );
+
+        podiumContainer.innerHTML = '';
+
+        results.forEach((res, index) => {
+
+            const row =
+                document.createElement('div');
+
+            row.className =
+                `p-3.5 rounded-xl flex items-center justify-between border ${
+                    index === 0
+                        ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-300'
+                }`;
+
+            let icon =
+                `#${index + 1}`;
+
+            if (index === 0) {
+                icon = '🥇 1º Lugar';
+            }
+
+            if (index === 1) {
+                icon = '🥈 2º Lugar';
+            }
+
+            if (index === 2) {
+                icon = '🥉 3º Lugar';
+            }
+
+            row.innerHTML = `
+                <div class="flex items-center gap-3">
+
+                    <span class="font-bold text-xs">
+                        ${icon}
+                    </span>
+
+                    <span class="font-black text-sm text-slate-100">
+                        ${escapeHtml(res.name)}
+                    </span>
+
+                </div>
+
+                <span class="text-base font-black text-cyan-400">
+                    ${res.score} PTS
+                </span>
+            `;
+
+            podiumContainer.appendChild(row);
+        });
+
+        modalGameover.classList.remove('hidden');
+    }
+
+    // ============================================================
+    // REINICIAR MESMOS JOGADORES
+    // ============================================================
+
+    btnRestartSame.addEventListener('click', () => {
+
+        modalGameover.classList.add('hidden');
+
+        gameState.players.forEach(
+            player => player.rolls = []
+        );
+
+        gameState.currentTurnPlayerIdx = 0;
+        gameState.isGameOver = false;
+        gameState.history = [];
+
+        saveToLocalStorage();
+
+        initGameUI();
+    });
+
+    // ============================================================
+    // NOVOS JOGADORES
+    // ============================================================
+
+    btnNewPlayers.addEventListener('click', () => {
+
+        modalGameover.classList.add('hidden');
+
+        resetToSetup();
+    });
+
+    // ============================================================
+    // RESETAR APLICAÇÃO
+    // ============================================================
+
+    btnResetApp.addEventListener('click', () => {
+
+        showConfirmModal(
+            'Nova Partida',
+            'Deseja reiniciar e voltar para o cadastro de jogadores?',
+            () => {
+                resetToSetup();
+            }
+        );
+    });
+
+    // ============================================================
+    // RESET PARA CONFIGURAÇÃO
+    // ============================================================
+
+    function resetToSetup() {
+
+        clearLocalStorage();
+
+        gameState = {
+            players: [],
             totalFrames: 10,
             currentTurnPlayerIdx: 0,
             isGameStarted: false,
             isGameOver: false,
-            history: [] // For undo functionality
+            history: []
         };
 
-        // Temporary pin selections for the active turn
-        let selectedPinIds = new Set();
+        screenGame.classList.add('hidden');
 
-        // Pending confirmation callback
-        let confirmCallback = null;
+        screenSetup.classList.remove('hidden');
 
-        /* ================= DOM ELEMENTS ================= */
-        const screenSetup = document.getElementById('screen-setup');
-        const screenGame = document.getElementById('screen-game');
-        const formAddPlayer = document.getElementById('form-add-player');
-        const inputPlayerName = document.getElementById('input-player-name');
-        const playersListContainer = document.getElementById('players-list-container');
-        const emptyPlayersMsg = document.getElementById('empty-players-msg');
-        const playerCountBadge = document.getElementById('player-count-badge');
-        const btnStartGame = document.getElementById('btn-start-game');
-        const btnFrameOpts = document.querySelectorAll('.btn-frame-opt');
-        const restoreBanner = document.getElementById('restore-banner');
-        const btnResumeGame = document.getElementById('btn-resume-game');
-        const btnResetApp = document.getElementById('btn-reset-app');
-        
-        const currentPlayerAvatar = document.getElementById('current-player-avatar');
-        const currentPlayerName = document.getElementById('current-player-name');
-        const currentFrameNum = document.getElementById('current-frame-num');
-        const currentRollNum = document.getElementById('current-roll-num');
-        const pinButtons = document.querySelectorAll('.pin-btn');
-        const quickButtonsGrid = document.getElementById('quick-buttons-grid');
-        const selectedPinsCount = document.getElementById('selected-pins-count');
-        const btnConfirmRoll = document.getElementById('btn-confirm-roll');
-        const btnUndoRoll = document.getElementById('btn-undo-roll');
-        const toastOverlay = document.getElementById('toast-overlay');
+        restoreBanner.classList.add('hidden');
 
-        const frameHeadersRow = document.getElementById('frame-headers-row');
-        const scoreboardTbody = document.getElementById('scoreboard-tbody');
-        const liveLeaderboard = document.getElementById('live-leaderboard');
+        renderSetupPlayersList();
+    }
 
-        const modalGameover = document.getElementById('modal-gameover');
-        const podiumContainer = document.getElementById('podium-container');
-        const btnRestartSame = document.getElementById('btn-restart-same');
-        const btnNewPlayers = document.getElementById('btn-new-players');
+    // ============================================================
+    // MODAL DE CONFIRMAÇÃO
+    // ============================================================
 
-        const modalConfirm = document.getElementById('modal-confirm');
-        const confirmTitle = document.getElementById('confirm-title');
-        const confirmMsg = document.getElementById('confirm-msg');
-        const btnConfirmCancel = document.getElementById('btn-confirm-cancel');
-        const btnConfirmOk = document.getElementById('btn-confirm-ok');
+    function showConfirmModal(
+        title,
+        message,
+        onOk
+    ) {
 
-        // Storage Helper Functions with safe try-catch wrapper
-        function saveToLocalStorage() {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState));
-                updateSaveIndicator(true);
-            } catch (err) {
-                console.warn('LocalStorage error or restricted sandbox:', err);
-                updateSaveIndicator(false);
-            }
+        confirmTitle.textContent =
+            title;
+
+        confirmMsg.textContent =
+            message;
+
+        confirmCallback =
+            onOk;
+
+        modalConfirm.classList.remove('hidden');
+    }
+
+    btnConfirmCancel.addEventListener(
+        'click',
+        () => {
+
+            modalConfirm.classList.add('hidden');
+
+            confirmCallback = null;
         }
+    );
 
-        function loadFromLocalStorage() {
-            try {
-                const saved = localStorage.getItem(STORAGE_KEY);
-                if (saved) {
-                    return JSON.parse(saved);
-                }
-            } catch (err) {
-                console.warn('Failed to read LocalStorage:', err);
-            }
-            return null;
-        }
+    btnConfirmOk.addEventListener(
+        'click',
+        () => {
 
-        function clearLocalStorage() {
-            try {
-                localStorage.removeItem(STORAGE_KEY);
-            } catch (err) {
-                console.warn('Failed to clear LocalStorage:', err);
-            }
-        }
+            modalConfirm.classList.add('hidden');
 
-        function updateSaveIndicator(isSaved) {
-            const statusText = document.getElementById('save-status-text');
-            if (statusText) {
-                statusText.textContent = isSaved ? 'Salvo localmente' : 'Memória da Sessão';
-            }
-        }
-
-        /* ================= SETUP & PLAYERS LOGIC ================= */
-
-        // Add Player
-        formAddPlayer.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const name = inputPlayerName.value.trim();
-            if (!name) return;
-
-            const newPlayer = {
-                id: 'p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-                name: name,
-                rolls: []
-            };
-
-            gameState.players.push(newPlayer);
-            inputPlayerName.value = '';
-            renderSetupPlayersList();
-            saveToLocalStorage();
-        });
-
-        // Remove Player
-        function removePlayer(id) {
-            gameState.players = gameState.players.filter(p => p.id !== id);
-            renderSetupPlayersList();
-            saveToLocalStorage();
-        }
-
-        // Render setup players list
-        function renderSetupPlayersList() {
-            playerCountBadge.textContent = gameState.players.length;
-            
-            if (gameState.players.length === 0) {
-                emptyPlayersMsg.classList.remove('hidden');
-                playersListContainer.innerHTML = '';
-                playersListContainer.appendChild(emptyPlayersMsg);
-                btnStartGame.disabled = true;
-                return;
+            if (confirmCallback) {
+                confirmCallback();
             }
 
-            emptyPlayersMsg.classList.add('hidden');
-            playersListContainer.innerHTML = '';
-
-            gameState.players.forEach((player, idx) => {
-                const div = document.createElement('div');
-                div.className = 'flex items-center justify-between bg-slate-950 p-3 rounded-xl border border-slate-800';
-                div.innerHTML = `
-                    <div class="flex items-center gap-3">
-                        <span class="w-6 h-6 rounded-lg bg-slate-800 text-cyan-400 font-bold text-xs flex items-center justify-center">${idx + 1}</span>
-                        <span class="font-semibold text-slate-200 text-sm">${escapeHtml(player.name)}</span>
-                    </div>
-                    <button type="button" onclick="removePlayer('${player.id}')" class="text-slate-500 hover:text-red-400 p-1 transition">
-                        <i class="fa-solid fa-trash-can text-sm"></i>
-                    </button>
-                `;
-                playersListContainer.appendChild(div);
-            });
-
-            btnStartGame.disabled = gameState.players.length === 0;
+            confirmCallback = null;
         }
+    );
 
-        // Select Frames Count Option
-        btnFrameOpts.forEach(btn => {
-            btn.addEventListener('click', () => {
-                btnFrameOpts.forEach(b => {
-                    b.classList.remove('active', 'border-cyan-500/50', 'bg-cyan-950/40', 'text-cyan-400', 'font-bold');
-                    b.classList.add('border-slate-800', 'bg-slate-950', 'text-slate-300', 'font-semibold');
-                });
-                btn.classList.add('active', 'border-cyan-500/50', 'bg-cyan-950/40', 'text-cyan-400', 'font-bold');
-                btn.classList.remove('border-slate-800', 'bg-slate-950', 'text-slate-300', 'font-semibold');
+    // ============================================================
+    // TOAST
+    // ============================================================
 
-                gameState.totalFrames = parseInt(btn.dataset.frames, 10);
-                saveToLocalStorage();
-            });
-        });
+    function showToast(title, message) {
 
-        // Start Game Button Handler
-        btnStartGame.addEventListener('click', () => {
-            if (gameState.players.length === 0) return;
-            gameState.isGameStarted = true;
-            gameState.currentTurnPlayerIdx = 0;
-            gameState.isGameOver = false;
-            
-            // Clear existing rolls if fresh start
-            gameState.players.forEach(p => p.rolls = []);
-            
-            saveToLocalStorage();
-            initGameUI();
-        });
+        const toast =
+            document.createElement('div');
 
-        // Resume Game Handler
-        btnResumeGame.addEventListener('click', () => {
-            initGameUI();
-        });
+        toast.className = `
+            fixed
+            top-5
+            left-1/2
+            -translate-x-1/2
+            z-[9999]
+            bg-slate-900
+            border
+            border-cyan-500/40
+            shadow-2xl
+            rounded-2xl
+            px-5
+            py-4
+            min-w-[280px]
+            text-center
+            animate-[fadeIn_.2s_ease-out]
+        `;
 
-        /* ================= SCORING ENGINE FOR 6-PIN BOWLING ================= */
+        toast.innerHTML = `
+            <div class="font-black text-cyan-400">
+                ${escapeHtml(title)}
+            </div>
 
-        /**
-         * Computes full frame breakdown and total score for a given player's rolls.
-         * Rules:
-         * - 6 Pins per deck.
-         * - Strike = 6 pins in roll 1. Frame ends. Bonus = sum of next 2 rolls.
-         * - Spare = roll1 + roll2 = 6 pins. Bonus = next 1 roll.
-         * - Open = roll1 + roll2 < 6 pins.
-         * - Final Frame (e.g., 10th frame):
-         *   - Up to 3 rolls if strike or spare achieved in frame 10.
-         */
-        function calculatePlayerScore(rolls, totalFrames) {
-            let score = 0;
-            let rollIdx = 0;
-            const frameDetails = [];
+            <div class="text-xs text-slate-400 mt-1">
+                ${escapeHtml(message)}
+            </div>
+        `;
 
-            for (let f = 0; f < totalFrames; f++) {
-                if (rollIdx >= rolls.length) {
-                    frameDetails.push({ rolls: [], score: null, cumulative: null, isStrike: false, isSpare: false, isComplete: false });
-                    continue;
-                }
+        document.body.appendChild(toast);
 
-                const isLastFrame = (f === totalFrames - 1);
+        setTimeout(() => {
 
-                if (!isLastFrame) {
-                    // Regular Frames (1 to totalFrames - 1)
-                    if (rolls[rollIdx] === 6) {
-                        // STRIKE
-                        const r1 = 6;
-                        const next1 = rolls[rollIdx + 1];
-                        const next2 = rolls[rollIdx + 2];
-
-                        let isComplete = (next1 !== undefined && next2 !== undefined);
-                        let frameScore = isComplete ? (6 + next1 + next2) : null;
-                        if (isComplete) score += frameScore;
-
-                        frameDetails.push({
-                            rolls: [r1],
-                            score: frameScore,
-                            cumulative: isComplete ? score : null,
-                            isStrike: true,
-                            isSpare: false,
-                            isComplete
-                        });
-                        rollIdx += 1;
-                    } else {
-                        // Non-strike 1st roll
-                        const r1 = rolls[rollIdx];
-                        const r2 = rolls[rollIdx + 1];
-
-                        if (r2 === undefined) {
-                            // Only 1 roll in frame so far
-                            frameDetails.push({
-                                rolls: [r1],
-                                score: null,
-                                cumulative: null,
-                                isStrike: false,
-                                isSpare: false,
-                                isComplete: false
-                            });
-                            rollIdx += 1;
-                        } else {
-                            // Two rolls made
-                            if (r1 + r2 === 6) {
-                                // SPARE
-                                const next1 = rolls[rollIdx + 2];
-                                let isComplete = (next1 !== undefined);
-                                let frameScore = isComplete ? (6 + next1) : null;
-                                if (isComplete) score += frameScore;
-
-                                frameDetails.push({
-                                    rolls: [r1, r2],
-                                    score: frameScore,
-                                    cumulative: isComplete ? score : null,
-                                    isStrike: false,
-                                    isSpare: true,
-                                    isComplete
-                                });
-                            } else {
-                                // OPEN FRAME
-                                let frameScore = r1 + r2;
-                                score += frameScore;
-
-                                frameDetails.push({
-                                    rolls: [r1, r2],
-                                    score: frameScore,
-                                    cumulative: score,
-                                    isStrike: false,
-                                    isSpare: false,
-                                    isComplete: true
-                                });
-                            }
-                            rollIdx += 2;
-                        }
-                    }
-                } else {
-                    // LAST FRAME (SPECIAL RULES)
-                    let fRolls = [];
-                    let r1 = rolls[rollIdx];
-                    if (r1 !== undefined) fRolls.push(r1);
-
-                    let r2 = rolls[rollIdx + 1];
-                    if (r2 !== undefined) fRolls.push(r2);
-
-                    let r3 = rolls[rollIdx + 2];
-                    if (r3 !== undefined) fRolls.push(r3);
-
-                    // Check if bonus 3rd roll was earned (Strike in r1, or Spare in r1+r2)
-                    const earnedBonus = (r1 === 6) || (r1 + r2 === 6);
-                    const isComplete = earnedBonus ? (fRolls.length === 3) : (fRolls.length === 2);
-
-                    let fTotal = fRolls.reduce((a, b) => a + b, 0);
-                    if (isComplete) score += fTotal;
-
-                    frameDetails.push({
-                        rolls: fRolls,
-                        score: isComplete ? fTotal : null,
-                        cumulative: isComplete ? score : null,
-                        isStrike: fRolls.includes(6),
-                        isSpare: !fRolls.includes(6) && (r1 + r2 === 6),
-                        isComplete
-                    });
-
-                    rollIdx += fRolls.length;
-                }
-            }
-
-            return { totalScore: score, frameDetails };
-        }
-
-        /**
-         * Helper to get current frame and roll number for active player turn
-         */
-        function getCurrentTurnInfo(player, totalFrames) {
-            const rolls = player.rolls;
-            let rollIdx = 0;
-
-            for (let f = 0; f < totalFrames; f++) {
-                const isLastFrame = (f === totalFrames - 1);
-
-                if (rollIdx >= rolls.length) {
-                    return { frame: f + 1, roll: 1, maxPins: 6, isLastFrame };
-                }
-
-                if (!isLastFrame) {
-                    if (rolls[rollIdx] === 6) {
-                        rollIdx += 1; // Strike completes frame
-                    } else if (rollIdx + 1 >= rolls.length) {
-                        // 1st roll done, waiting 2nd roll
-                        const remainingPins = 6 - rolls[rollIdx];
-                        return { frame: f + 1, roll: 2, maxPins: remainingPins, isLastFrame };
-                    } else {
-                        rollIdx += 2; // 2 rolls done in frame
-                    }
-                } else {
-                    // Frame 10
-                    const remainingInFrame = rolls.length - rollIdx;
-                    const r1 = rolls[rollIdx];
-                    const r2 = rolls[rollIdx + 1];
-
-                    if (remainingInFrame === 0) {
-                        return { frame: f + 1, roll: 1, maxPins: 6, isLastFrame };
-                    } else if (remainingInFrame === 1) {
-                        // Roll 2 of 10th frame
-                        let maxPins = (r1 === 6) ? 6 : (6 - r1);
-                        return { frame: f + 1, roll: 2, maxPins, isLastFrame };
-                    } else if (remainingInFrame === 2) {
-                        // Roll 3 of 10th frame (if bonus earned)
-                        const bonusEarned = (r1 === 6) || (r1 + r2 === 6);
-                        if (bonusEarned) {
-                            let maxPins = 6;
-                            if (r2 !== 6 && r1 + r2 !== 6) {
-                                maxPins = 6 - r2;
-                            }
-                            return { frame: f + 1, roll: 3, maxPins, isLastFrame };
-                        }
-                    }
-                }
-            }
-
-            return { isFinished: true };
-        }
-
-        /* ================= GAME UI RENDERING ================= */
-
-        function initGameUI() {
-            screenSetup.classList.add('hidden');
-            screenGame.classList.remove('hidden');
-
-            renderFrameHeaders();
-            updateTurnView();
-            renderScoreboard();
-        }
-
-        // Render Frame Column Headers in Table
-        function renderFrameHeaders() {
-            frameHeadersRow.innerHTML = '';
-            for (let i = 1; i <= gameState.totalFrames; i++) {
-                const th = document.createElement('th');
-                th.className = 'p-2 text-center border-l border-slate-800 font-bold min-w-[55px]';
-                th.innerHTML = `<span class="text-xs text-slate-400">R${i}</span>`;
-                frameHeadersRow.appendChild(th);
-            }
-        }
-
-        // Update Turn Controls (Pins layout, Player name, status)
-        function updateTurnView() {
-            if (gameState.isGameOver) return;
-
-            const currentPlayer = gameState.players[gameState.currentTurnPlayerIdx];
-            const turnInfo = getCurrentTurnInfo(currentPlayer, gameState.totalFrames);
-
-            // Check if match is completely over for all players
-            if (turnInfo.isFinished) {
-                // Try finding next player who isn't finished
-                let foundNext = false;
-                for (let i = 0; i < gameState.players.length; i++) {
-                    const nextIdx = (gameState.currentTurnPlayerIdx + i) % gameState.players.length;
-                    const info = getCurrentTurnInfo(gameState.players[nextIdx], gameState.totalFrames);
-                    if (!info.isFinished) {
-                        gameState.currentTurnPlayerIdx = nextIdx;
-                        foundNext = true;
-                        break;
-                    }
-                }
-
-                if (!foundNext) {
-                    // GAME OVER!
-                    endGame();
-                    return;
-                }
-            }
-
-            // Re-fetch current player after potential index update
-            const activePlayer = gameState.players[gameState.currentTurnPlayerIdx];
-            const activeTurnInfo = getCurrentTurnInfo(activePlayer, gameState.totalFrames);
-
-            currentPlayerName.textContent = activePlayer.name;
-            currentPlayerAvatar.textContent = activePlayer.name.charAt(0).toUpperCase();
-            currentFrameNum.textContent = `${activeTurnInfo.frame} / ${gameState.totalFrames}`;
-            currentRollNum.textContent = `${activeTurnInfo.roll}º`;
-
-            // Reset pin selections
-            selectedPinIds.clear();
-            updatePinDeckVisuals(activeTurnInfo.maxPins);
-            renderQuickButtons(activeTurnInfo.maxPins);
-            updateSelectedPinsDisplay();
-        }
-
-        // Update Pin Buttons Visual state
-        function updatePinDeckVisuals(maxPins) {
-            pinButtons.forEach(btn => {
-                const pinId = parseInt(btn.dataset.pinId, 10);
-                
-                // Reset state
-                btn.classList.remove('knocked');
-                btn.disabled = false;
-
-                // Disable pins that exceed available pins for 2nd roll if needed
-                if (pinId > maxPins) {
-                    btn.disabled = true;
-                    btn.classList.add('opacity-20', 'cursor-not-allowed');
-                } else {
-                    btn.classList.remove('opacity-20', 'cursor-not-allowed');
-                }
-
-                if (selectedPinIds.has(pinId)) {
-                    btn.classList.add('knocked');
-                }
-            });
-        }
-
-        // Render Quick Select Buttons (0, 1, 2... maxPins)
-        function renderQuickButtons(maxPins) {
-            quickButtonsGrid.innerHTML = '';
-            
-            for (let i = 0; i <= maxPins; i++) {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                
-                let label = i.toString();
-                let bgClass = 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700';
-
-                if (i === 0) {
-                    label = '0 (Canaleta)';
-                    bgClass = 'bg-slate-850 hover:bg-slate-800 text-slate-400 border-slate-800 text-[11px]';
-                } else if (i === 6) {
-                    label = '6 (STRIKE!)';
-                    bgClass = 'bg-red-950 hover:bg-red-900 text-red-300 font-black border-red-800/80 text-xs';
-                }
-
-                btn.className = `py-2 px-1 rounded-xl border text-xs font-bold transition flex items-center justify-center ${bgClass}`;
-                btn.textContent = label;
-                
-                btn.addEventListener('click', () => {
-                    // Set pins 1 through i as selected
-                    selectedPinIds.clear();
-                    for (let p = 1; p <= i; p++) {
-                        selectedPinIds.add(p);
-                    }
-                    updatePinDeckVisuals(maxPins);
-                    updateSelectedPinsDisplay();
-                });
-
-                quickButtonsGrid.appendChild(btn);
-            }
-        }
-
-        // Pin Button Click Event
-        pinButtons.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const pinId = parseInt(btn.dataset.pinId, 10);
-                if (selectedPinIds.has(pinId)) {
-                    selectedPinIds.delete(pinId);
-                } else {
-                    selectedPinIds.add(pinId);
-                }
-
-                const currentPlayer = gameState.players[gameState.currentTurnPlayerIdx];
-                const turnInfo = getCurrentTurnInfo(currentPlayer, gameState.totalFrames);
-                updatePinDeckVisuals(turnInfo.maxPins);
-                updateSelectedPinsDisplay();
-            });
-        });
-
-        function updateSelectedPinsDisplay() {
-            selectedPinsCount.textContent = selectedPinIds.size;
-        }
-
-        /* ================= TURN EXECUTION & ROTATION ================= */
-
-        // Confirm Roll Button Handler
-        btnConfirmRoll.addEventListener('click', () => {
-            const pinsKnocked = selectedPinIds.size;
-            const currentPlayer = gameState.players[gameState.currentTurnPlayerIdx];
-            const turnInfo = getCurrentTurnInfo(currentPlayer, gameState.totalFrames);
-
-            // Record roll
-            currentPlayer.rolls.push(pinsKnocked);
-
-            // Show animation/celebration toast for Strike or Spare
-            if (pinsKnocked === 6 && turnInfo.roll === 1) {
-                showToastCelebration('STRIKE! 💥', 'bg-red-500 text-white');
-            } else if (turnInfo.roll === 2 && (currentPlayer.rolls[currentPlayer.rolls.length - 2] + pinsKnocked === 6)) {
-                showToastCelebration('SPARE! ✨', 'bg-blue-500 text-white');
-            }
-
-            // Determine if turn switches to next player
-            // Regular frames: turn ends if Strike (roll 1 = 6) OR if roll 2 completes
-            const isLastFrame = turnInfo.isLastFrame;
-            let turnEnded = false;
-
-            if (!isLastFrame) {
-                if (pinsKnocked === 6 || turnInfo.roll === 2) {
-                    turnEnded = true;
-                }
-            } else {
-                // Last frame: check if rolls finished
-                const frameTurnInfo = getCurrentTurnInfo(currentPlayer, gameState.totalFrames);
-                if (frameTurnInfo.frame !== gameState.totalFrames || frameTurnInfo.isFinished) {
-                    turnEnded = true;
-                }
-            }
-
-            if (turnEnded) {
-                // Move to next player
-                gameState.currentTurnPlayerIdx = (gameState.currentTurnPlayerIdx + 1) % gameState.players.length;
-            }
-
-            saveToLocalStorage();
-            updateTurnView();
-            renderScoreboard();
-        });
-
-        // Undo Last Roll
-        btnUndoRoll.addEventListener('click', () => {
-            // Find last player who rolled
-            let prevPlayerIdx = (gameState.currentTurnPlayerIdx - 1 + gameState.players.length) % gameState.players.length;
-            
-            // Check if current player has rolls to undo first
-            const currentPlayer = gameState.players[gameState.currentTurnPlayerIdx];
-            
-            if (currentPlayer.rolls.length > 0) {
-                currentPlayer.rolls.pop();
-            } else if (gameState.players[prevPlayerIdx].rolls.length > 0) {
-                gameState.players[prevPlayerIdx].rolls.pop();
-                gameState.currentTurnPlayerIdx = prevPlayerIdx;
-            } else {
-                return; // Nothing to undo
-            }
-
-            saveToLocalStorage();
-            updateTurnView();
-            renderScoreboard();
-        });
-
-        // Floating celebration message animation
-        function showToastCelebration(text, bgClasses) {
-            const toast = document.createElement('div');
-            toast.className = `toast-celebration absolute px-6 py-2.5 rounded-full font-black text-lg tracking-wider shadow-2xl z-30 ${bgClasses}`;
-            toast.textContent = text;
-            toastOverlay.appendChild(toast);
+            toast.style.opacity = '0';
+            toast.style.transition = 'opacity .25s';
 
             setTimeout(() => {
                 toast.remove();
-            }, 1800);
-        }
+            }, 250);
 
-        /* ================= SCOREBOARD MATRIX RENDERING ================= */
+        }, 1800);
+    }
 
-        function renderScoreboard() {
-            scoreboardTbody.innerHTML = '';
+    // ============================================================
+    // EVENTOS DOS BOTÕES DE PINOS
+    // ============================================================
 
-            const leaderList = [];
+    pinsButtons.forEach(button => {
 
-            gameState.players.forEach((player, pIdx) => {
-                const { totalScore, frameDetails } = calculatePlayerScore(player.rolls, gameState.totalFrames);
-                leaderList.push({ name: player.name, score: totalScore, playerIdx: pIdx });
+        button.addEventListener('click', () => {
 
-                const isCurrentTurn = (pIdx === gameState.currentTurnPlayerIdx) && !gameState.isGameOver;
+            const pins =
+                Number(button.dataset.pins);
 
-                const tr = document.createElement('tr');
-                tr.className = isCurrentTurn ? 'bg-cyan-950/30 font-medium' : 'hover:bg-slate-950/40';
+            if (
+                Number.isNaN(pins) ||
+                pins < 0 ||
+                pins > 6
+            ) {
+                return;
+            }
 
-                // Player Column
-                let html = `
-                    <td class="p-3">
-                        <div class="flex items-center gap-2">
-                            ${isCurrentTurn ? '<span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>' : ''}
-                            <span class="font-bold ${isCurrentTurn ? 'text-cyan-300' : 'text-slate-200'}">${escapeHtml(player.name)}</span>
-                        </div>
-                    </td>
-                `;
-
-                // Frames Columns
-                for (let f = 0; f < gameState.totalFrames; f++) {
-                    const detail = frameDetails[f] || { rolls: [], score: null, cumulative: null };
-                    
-                    let roll1Txt = detail.rolls[0] !== undefined ? (detail.rolls[0] === 6 ? 'X' : (detail.rolls[0] === 0 ? '-' : detail.rolls[0])) : '';
-                    let roll2Txt = detail.rolls[1] !== undefined ? (detail.isSpare ? '/' : (detail.rolls[1] === 0 ? '-' : detail.rolls[1])) : '';
-                    let roll3Txt = detail.rolls[2] !== undefined ? (detail.rolls[2] === 6 ? 'X' : (detail.rolls[2] === 0 ? '-' : detail.rolls[2])) : '';
-
-                    if (detail.isStrike && f < gameState.totalFrames - 1) {
-                        roll1Txt = '';
-                        roll2Txt = 'X';
-                    }
-
-                    html += `
-                        <td class="p-2 border-l border-slate-800 text-center">
-                            <div class="flex justify-end gap-1 text-[11px] font-mono mb-1 text-slate-400 border-b border-slate-800/60 pb-0.5">
-                                <span class="${roll1Txt === 'X' ? 'text-red-400 font-bold' : ''}">${roll1Txt}</span>
-                                <span class="${roll2Txt === '/' ? 'text-blue-400 font-bold' : (roll2Txt === 'X' ? 'text-red-400 font-bold' : '')}">${roll2Txt}</span>
-                                ${f === gameState.totalFrames - 1 ? `<span class="text-amber-400 font-bold">${roll3Txt}</span>` : ''}
-                            </div>
-                            <div class="text-xs font-black text-slate-200">
-                                ${detail.cumulative !== null ? detail.cumulative : ''}
-                            </div>
-                        </td>
-                    `;
-                }
-
-                // Total Column
-                html += `
-                    <td class="p-3 text-center border-l border-slate-800 bg-slate-950/60">
-                        <span class="text-base font-black text-cyan-400">${totalScore}</span>
-                    </td>
-                `;
-
-                tr.innerHTML = html;
-                scoreboardTbody.appendChild(tr);
-            });
-
-            // Update Live Leaderboard
-            renderLiveLeaderboard(leaderList);
-        }
-
-        // Mini Leaderboard
-        function renderLiveLeaderboard(leaderList) {
-            leaderList.sort((a, b) => b.score - a.score);
-            liveLeaderboard.innerHTML = '';
-
-            leaderList.forEach((item, index) => {
-                const div = document.createElement('div');
-                div.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800';
-
-                let medal = `<span class="w-5 text-center text-xs font-bold text-slate-500">${index + 1}</span>`;
-                if (index === 0) medal = `<span class="text-amber-400 text-sm">🥇</span>`;
-                if (index === 1) medal = `<span class="text-slate-300 text-sm">🥈</span>`;
-                if (index === 2) medal = `<span class="text-amber-600 text-sm">🥉</span>`;
-
-                div.innerHTML = `
-                    <div class="flex items-center gap-2.5">
-                        ${medal}
-                        <span class="text-xs font-bold text-slate-200">${escapeHtml(item.name)}</span>
-                    </div>
-                    <span class="text-sm font-black text-cyan-400">${item.score} pts</span>
-                `;
-                liveLeaderboard.appendChild(div);
-            });
-        }
-
-        /* ================= GAME OVER LOGIC ================= */
-
-        function endGame() {
-            gameState.isGameOver = true;
-            saveToLocalStorage();
-
-            // Calculate final scores
-            const results = gameState.players.map(p => {
-                const { totalScore } = calculatePlayerScore(p.rolls, gameState.totalFrames);
-                return { name: p.name, score: totalScore };
-            });
-
-            results.sort((a, b) => b.score - a.score);
-
-            // Render Podium
-            podiumContainer.innerHTML = '';
-            results.forEach((res, index) => {
-                const row = document.createElement('div');
-                row.className = `p-3.5 rounded-xl flex items-center justify-between border ${
-                    index === 0 
-                        ? 'bg-amber-950/40 border-amber-500/50 text-amber-300' 
-                        : 'bg-slate-950 border-slate-800 text-slate-300'
-                }`;
-
-                let icon = `#${index + 1}`;
-                if (index === 0) icon = '🥇 1º Lugar';
-                if (index === 1) icon = '🥈 2º Lugar';
-                if (index === 2) icon = '🥉 3º Lugar';
-
-                row.innerHTML = `
-                    <div class="flex items-center gap-3">
-                        <span class="font-bold text-xs">${icon}</span>
-                        <span class="font-black text-sm text-slate-100">${escapeHtml(res.name)}</span>
-                    </div>
-                    <span class="text-base font-black text-cyan-400">${res.score} PTS</span>
-                `;
-                podiumContainer.appendChild(row);
-            });
-
-            modalGameover.classList.remove('hidden');
-        }
-
-        // Modal Action: Restart with same players
-        btnRestartSame.addEventListener('click', () => {
-            modalGameover.classList.add('hidden');
-            gameState.players.forEach(p => p.rolls = []);
-            gameState.currentTurnPlayerIdx = 0;
-            gameState.isGameOver = false;
-            saveToLocalStorage();
-            initGameUI();
+            registerRoll(pins);
         });
+    });
 
-        // Modal Action: New Match
-        btnNewPlayers.addEventListener('click', () => {
-            modalGameover.classList.add('hidden');
-            resetToSetup();
-        });
+    // ============================================================
+    // ESCAPE HTML
+    // ============================================================
 
-        /* ================= RESET & UTILS ================= */
+    function escapeHtml(str) {
 
-        // Reset App Button (Header)
-        btnResetApp.addEventListener('click', () => {
-            showConfirmModal('Nova Partida', 'Deseja reiniciar e voltar para o cadastro de jogadores?', () => {
-                resetToSetup();
-            });
-        });
+        return String(str).replace(
+            /[&<>"']/g,
+            function (m) {
 
-        function resetToSetup() {
-            clearLocalStorage();
-            gameState = {
-                players: [],
-                totalFrames: 10,
-                currentTurnPlayerIdx: 0,
-                isGameStarted: false,
-                isGameOver: false,
-                history: []
-            };
-            screenGame.classList.add('hidden');
-            screenSetup.classList.remove('hidden');
-            restoreBanner.classList.add('hidden');
-            renderSetupPlayersList();
-        }
-
-        // Custom Confirmation Modal Helper
-        function showConfirmModal(title, message, onOk) {
-            confirmTitle.textContent = title;
-            confirmMsg.textContent = message;
-            confirmCallback = onOk;
-            modalConfirm.classList.remove('hidden');
-        }
-
-        btnConfirmCancel.addEventListener('click', () => {
-            modalConfirm.classList.add('hidden');
-            confirmCallback = null;
-        });
-
-        btnConfirmOk.addEventListener('click', () => {
-            modalConfirm.classList.add('hidden');
-            if (confirmCallback) confirmCallback();
-        });
-
-        function escapeHtml(str) {
-            return str.replace(/[&<>"']/g, function(m) {
                 return {
                     '&': '&amp;',
                     '<': '&lt;',
@@ -1204,22 +1927,58 @@
                     '"': '&quot;',
                     "'": '&#039;'
                 }[m];
-            });
-        }
+            }
+        );
+    }
 
-        /* ================= INITIALIZATION ================= */
-        window.addEventListener('load', () => {
-            const savedState = loadFromLocalStorage();
-            if (savedState && savedState.players && savedState.players.length > 0) {
-                gameState = savedState;
-                if (gameState.isGameStarted && !gameState.isGameOver) {
-                    restoreBanner.classList.remove('hidden');
-                    document.getElementById('restore-info').textContent = 
+    // ============================================================
+    // RESTAURAR PARTIDA AO CARREGAR
+    // ============================================================
+
+    window.addEventListener('load', () => {
+
+        const savedState =
+            loadFromLocalStorage();
+
+        if (
+            savedState &&
+            savedState.players &&
+            savedState.players.length > 0
+        ) {
+
+            gameState =
+                savedState;
+
+            if (
+                gameState.isGameStarted &&
+                !gameState.isGameOver
+            ) {
+
+                restoreBanner.classList.remove(
+                    'hidden'
+                );
+
+                const restoreInfo =
+                    document.getElementById(
+                        'restore-info'
+                    );
+
+                if (restoreInfo) {
+
+                    restoreInfo.textContent =
                         `Partida com ${gameState.players.length} jogador(es) (${gameState.totalFrames} frames).`;
                 }
+
+                screenSetup.classList.add('hidden');
+
+                screenGame.classList.remove('hidden');
+
+                initGameUI();
             }
-            renderSetupPlayersList();
-        });
-    </script>
+        }
+
+        renderSetupPlayersList();
+    });
+</script>
 </body>
 </html>
