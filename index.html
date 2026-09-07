@@ -397,104 +397,155 @@
         // -------------------------------------------------------------
         // OFFICIAL 6-PIN BOWLING SCORE ENGINE
         // -------------------------------------------------------------
-        function calculate6PinBowlingScore(rolls = []) {
-            let frames = [];
-            let rollIdx = 0;
-            let runningScore = 0;
+function calculate6PinBowlingScore(rolls = []) {
+    let frames = [];
+    let rollIdx = 0;
+    let runningScore = 0;
 
-            for (let f = 1; f <= 10; f++) {
-                if (rollIdx >= rolls.length) break;
+    for (let f = 1; f <= 10; f++) {
+        if (rollIdx >= rolls.length) break;
 
-                // Frame 10 (Last Frame)
-                if (f === 10) {
-                    let r1 = rolls[rollIdx] ?? null;
-                    let r2 = rolls[rollIdx + 1] ?? null;
-                    let r3 = rolls[rollIdx + 2] ?? null;
+        // =========================================================
+        // FRAME 10
+        // =========================================================
+        if (f === 10) {
+            let r1 = rolls[rollIdx] ?? null;
+            let r2 = rolls[rollIdx + 1] ?? null;
+            let r3 = rolls[rollIdx + 2] ?? null;
 
-                    let frameTotal = (r1 || 0) + (r2 || 0) + (r3 || 0);
-                    runningScore += frameTotal;
+            let frameTotal = (r1 || 0) + (r2 || 0) + (r3 || 0);
 
-                    let isComplete = false;
-                    if (r1 !== null && r2 !== null) {
-                        if (r1 + r2 >= TOTAL_PINS) {
-                            isComplete = r3 !== null;
-                        } else {
-                            isComplete = true;
-                        }
-                    }
+            runningScore += frameTotal;
 
-                    frames.push({
-                        frameNumber: 10,
-                        rolls: [r1, r2, r3].filter(x => x !== null),
-                        r1, r2, r3,
-                        score: runningScore,
-                        isComplete
-                    });
-                    break;
-                }
+            let isComplete = false;
 
-                // Frames 1 to 9
-                let firstRoll = rolls[rollIdx];
-
-                // Strike (6 pins down on 1st roll)
-                if (firstRoll === TOTAL_PINS) {
-                    let bonus1 = rolls[rollIdx + 1] ?? 0;
-                    let bonus2 = rolls[rollIdx + 2] ?? 0;
-                    let hasNext1 = rolls[rollIdx + 1] !== undefined;
-                    let hasNext2 = rolls[rollIdx + 2] !== undefined;
-
-                    runningScore += TOTAL_PINS + bonus1 + bonus2;
-                    frames.push({
-                        frameNumber: f,
-                        rolls: [TOTAL_PINS],
-                        isStrike: true,
-                        score: runningScore,
-                        isComplete: hasNext1 && hasNext2
-                    });
-                    rollIdx += 1;
+            if (r1 !== null && r2 !== null) {
+                if (r1 === TOTAL_PINS || r1 + r2 === TOTAL_PINS) {
+                    isComplete = r3 !== null;
                 } else {
-                    let secondRoll = rolls[rollIdx + 1] ?? null;
-
-                    if (secondRoll !== null) {
-                        // Spare
-                        if (firstRoll + secondRoll === TOTAL_PINS) {
-                            let bonus1 = rolls[rollIdx + 2] ?? 0;
-                            let hasNext1 = rolls[rollIdx + 2] !== undefined;
-
-                            runningScore += TOTAL_PINS + bonus1;
-                            frames.push({
-                                frameNumber: f,
-                                rolls: [firstRoll, secondRoll],
-                                isSpare: true,
-                                score: runningScore,
-                                isComplete: hasNext1
-                            });
-                        } else {
-                            // Open Frame
-                            runningScore += firstRoll + secondRoll;
-                            frames.push({
-                                frameNumber: f,
-                                rolls: [firstRoll, secondRoll],
-                                score: runningScore,
-                                isComplete: true
-                            });
-                        }
-                        rollIdx += 2;
-                    } else {
-                        // Incomplete frame
-                        frames.push({
-                            frameNumber: f,
-                            rolls: [firstRoll],
-                            score: runningScore + firstRoll,
-                            isComplete: false
-                        });
-                        rollIdx += 1;
-                    }
+                    isComplete = true;
                 }
             }
 
-            return { frames, totalScore: runningScore };
+            frames.push({
+                frameNumber: 10,
+                rolls: [r1, r2, r3].filter(x => x !== null),
+                r1,
+                r2,
+                r3,
+                score: runningScore,
+                isComplete
+            });
+
+            break;
         }
+
+        // =========================================================
+        // FRAMES 1-9
+        // =========================================================
+        let firstRoll = rolls[rollIdx];
+
+        // ---------------------------------------------------------
+        // STRIKE
+        // ---------------------------------------------------------
+        if (firstRoll === TOTAL_PINS) {
+            let bonus1 = rolls[rollIdx + 1] ?? 0;
+            let bonus2 = rolls[rollIdx + 2] ?? 0;
+
+            let hasNext1 = rolls[rollIdx + 1] !== undefined;
+            let hasNext2 = rolls[rollIdx + 2] !== undefined;
+
+            let frameScore = TOTAL_PINS + bonus1 + bonus2;
+
+            runningScore += frameScore;
+
+            frames.push({
+                frameNumber: f,
+                rolls: [TOTAL_PINS],
+                isStrike: true,
+                score: runningScore,
+                isComplete: hasNext1 && hasNext2
+            });
+
+            rollIdx += 1;
+            continue;
+        }
+
+        // ---------------------------------------------------------
+        // SEGUNDO LANÇAMENTO
+        // ---------------------------------------------------------
+        let secondRoll = rolls[rollIdx + 1] ?? null;
+
+        if (secondRoll !== null) {
+
+            // -----------------------------------------------------
+            // SPARE
+            // -----------------------------------------------------
+            if (firstRoll + secondRoll === TOTAL_PINS) {
+                let bonus1 = rolls[rollIdx + 2] ?? 0;
+                let hasNext1 = rolls[rollIdx + 2] !== undefined;
+
+                let frameScore = TOTAL_PINS + bonus1;
+
+                runningScore += frameScore;
+
+                frames.push({
+                    frameNumber: f,
+                    rolls: [firstRoll, secondRoll],
+                    isSpare: true,
+                    score: runningScore,
+                    isComplete: hasNext1
+                });
+
+            }
+
+            // -----------------------------------------------------
+            // JOGADA NORMAL / OPEN FRAME
+            // -----------------------------------------------------
+            else {
+                let frameScore = firstRoll + secondRoll;
+
+                runningScore += frameScore;
+
+                frames.push({
+                    frameNumber: f,
+                    rolls: [firstRoll, secondRoll],
+                    isStrike: false,
+                    isSpare: false,
+                    score: runningScore,
+                    isComplete: true
+                });
+            }
+
+            rollIdx += 2;
+        }
+
+        // ---------------------------------------------------------
+        // APENAS PRIMEIRO LANÇAMENTO
+        // ---------------------------------------------------------
+        else {
+
+            // AQUI ESTAVA O BUG:
+            // agora o ponto é imediatamente adicionado ao placar.
+
+            runningScore += firstRoll;
+
+            frames.push({
+                frameNumber: f,
+                rolls: [firstRoll],
+                score: runningScore,
+                isComplete: false
+            });
+
+            rollIdx += 1;
+        }
+    }
+
+    return {
+        frames,
+        totalScore: runningScore
+    };
+}
 
         let gameState = {
             players: ["gabislel", "mayara"],
